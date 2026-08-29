@@ -1,0 +1,5 @@
+{
+  "title": "ClaimForge",
+  "card": "custom",
+  "description": "Offline auth differential analysis — JWT, cookies, session timeline, two-account BOLA/IDOR."
+}
