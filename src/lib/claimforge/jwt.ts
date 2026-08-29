@@ -21,30 +21,37 @@ function parseJson(s: string): Record<string, unknown> {
   }
 }
 
-const JWT_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g;
-const JWT_UNSIGNED_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.?/g;
+/** Three segments, non-empty signature (HS256/RS256/…). */
+const JWT_SIGNED_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+/** Two segments, optional trailing dot (alg=none / unsigned). */
+const JWT_TWO_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+/g;
 
 export function extractJwtStrings(text: string): string[] {
-  const found = new Set<string>();
-  for (const m of text.matchAll(JWT_RE)) found.add(m[0]);
-  for (const m of text.matchAll(JWT_UNSIGNED_RE)) {
-    const t = m[0].replace(/\.$/, "");
-    if (t.split(".").length >= 2) found.add(t);
+  const signed: string[] = [];
+  for (const m of text.matchAll(JWT_SIGNED_RE)) signed.push(m[0]);
+
+  const unsigned: string[] = [];
+  for (const m of text.matchAll(JWT_TWO_RE)) {
+    const two = m[0];
+    const covered = signed.some((s) => s === two || s.startsWith(`${two}.`));
+    if (!covered) unsigned.push(two);
   }
-  return [...found];
+
+  return [...new Set([...signed, ...unsigned])];
 }
 
 export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToken | null {
-  const parts = raw.split(".").filter(Boolean);
-  if (parts.length < 2) return null;
-  const header = parseJson(b64urlToUtf8(parts[0] ?? ""));
-  const payload = parseJson(b64urlToUtf8(parts[1] ?? ""));
+  const segs = raw.replace(/\.$/, "").split(".");
+  if (segs.length < 2) return null;
+  const signature = segs.length >= 3 ? (segs[2] ?? "") : "";
+  const header = parseJson(b64urlToUtf8(segs[0] ?? ""));
+  const payload = parseJson(b64urlToUtf8(segs[1] ?? ""));
   if (!Object.keys(header).length && !Object.keys(payload).length) return null;
   const alg = typeof header.alg === "string" ? header.alg : undefined;
   const issues: string[] = [];
   const algLc = (alg ?? "").toLowerCase();
   if (!alg || algLc === "none" || algLc === "n0ne") issues.push("alg is none / missing — signature not bound");
-  if (parts.length < 3 || !(parts[2] ?? "").length) issues.push("unsigned (two-part) token");
+  if (!signature.length) issues.push("unsigned (two-part) token");
   if (header.jwk) issues.push("embedded jwk in header (confused-deputy / key injection)");
   if (typeof header.jku === "string") issues.push(`jku remote key URL: ${header.jku}`);
   if (typeof header.x5u === "string") issues.push(`x5u remote cert URL: ${header.x5u}`);
@@ -64,7 +71,8 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
   if (/admin|root|superuser/i.test(role)) issues.push(`privileged role claim: ${role}`);
   if (payload.sub && payload.userId && String(payload.sub) !== String(payload.userId))
     issues.push("sub and userId disagree");
-  return { actor, raw, source, header, payload, alg, parts: parts.length, issues };
+  const parts = signature.length ? 3 : 2;
+  return { actor, raw, source, header, payload, alg, parts, issues };
 }
 
 export function utf8ToB64url(s: string): string {
