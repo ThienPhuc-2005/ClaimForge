@@ -17,6 +17,7 @@ import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
 import { buildPaths, buildReplays } from "./playbook.ts";
 import { classifySameObject, looksPublicOrShared, sameObjectHits, strongestClass } from "./bola.ts";
 import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
+import { jwtIssueKind, mergeFindings } from "./dedup.ts";
 
 function trimBody(s?: string): string | undefined {
   if (s == null || s.length <= MAX_BODY_CHARS) return s;
@@ -179,16 +180,25 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
   };
 
   for (const jwt of ws.jwts) {
+    const kinds = new Map<string, string[]>();
     for (const issue of jwt.issues) {
-      const infoOnly = /no iss claim|no aud claim|already expired|nbf in the future|lifetime >/i.test(issue);
-      const sev = issue.includes("none") || issue.includes("unsigned") || issue.includes("jwk") ? "high" : "medium";
+      const kind = jwtIssueKind(issue);
+      const list = kinds.get(kind) ?? [];
+      list.push(issue);
+      kinds.set(kind, list);
+    }
+    for (const [kind, issues] of kinds) {
+      const infoOnly = /iss|aud|lifetime/.test(kind);
+      const sev: Finding["severity"] =
+        kind === "alg-none" || kind === "key-injection" ? "high" : infoOnly ? "info" : "medium";
       add({
-        severity: infoOnly ? "info" : issue.includes("expired") ? "info" : sev,
+        severity: sev,
         confidence: "observation",
-        title: `JWT · actor ${jwt.actor}: ${issue.split("—")[0]}`,
-        why: issue,
+        title: `JWT · actor ${jwt.actor}: ${issues[0]!.split("—")[0]}`,
+        why: issues.join("; "),
         evidence: [`alg=${jwt.alg ?? "?"}`, `src=${jwt.source}`, `sub=${jwtSubject(jwt) ?? "?"}`],
         how: "This is a capture heuristic (alg=none / embedded jwk / unsigned). Confirm the API rejects those in a lab proxy. Do not send forged tokens at live hosts from this app.",
+        fingerprint: `jwt:${jwt.actor}:${kind}`,
       });
     }
   }
@@ -211,12 +221,13 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
           `SameSite=${c.flags.sameSite ?? "∅"}`,
         ],
         how: "Session cookies need HttpOnly + Secure + SameSite=Lax/Strict. Fix on the lab app, then re-capture.",
+        fingerprint: `cookie:${c.actor}:${c.name}:${issue}`,
       });
     }
   }
 
-  const ownedA = ownedObjects(ws.requests, ws.jwts, "A");
-  const ownedB = ownedObjects(ws.requests, ws.jwts, "B");
+  const ownedA = ownedObjects(ws.requests, ws.jwts, "A", ws.cookies);
+  const ownedB = ownedObjects(ws.requests, ws.jwts, "B", ws.cookies);
   for (const req of ws.requests) {
     if (req.actor !== "B") continue;
     if (req.status < 200 || req.status >= 300) continue;
@@ -233,6 +244,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         evidence: [`${req.method} ${req.path} → ${req.status}`, `A owns: ${stolen.join(", ")}`],
         template: req.template,
         how: "Heuristic. Authorize on object owner, not on 'is authenticated'. Compare the same request as A vs B in your interceptor.",
+        fingerprint: `bola:${req.template ?? req.path}`,
       });
     }
   }
@@ -252,6 +264,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         ],
         template: row.template,
         how: "Heuristic. Bind the object to session.sub before returning 200. Replay B's token on A's object in a lab proxy, then file.",
+        fingerprint: `bola:${row.template}`,
       });
     } else if (row.verdict === "suspect") {
       add({
@@ -266,6 +279,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         ],
         template: row.template,
         how: "Capture a body with ownerId/userId, or an A-only inventory listing this id, before calling it BOLA.",
+        fingerprint: `bola-suspect:${row.template}`,
       });
     } else if (row.verdict === "shared") {
       add({
@@ -276,6 +290,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         evidence: [row.aSample?.path ?? "", row.bSample?.path ?? ""],
         template: row.template,
         how: "Both roles 2xx on a catalog/public/shared object is often expected. Do not file as IDOR from this row alone.",
+        fingerprint: `shared:${row.template}`,
       });
     }
   }
@@ -291,6 +306,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         evidence: [req.url.slice(0, 180)],
         template: req.template,
         how: "Move bearer tokens to Authorization header.",
+        fingerprint: `token-query:${req.template}`,
       });
     }
     if (loc.toLowerCase().startsWith("basic ")) {
@@ -301,6 +317,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         why: "Basic auth is replayable from the HAR forever until the password changes.",
         evidence: [`${req.method} ${req.path}`],
         how: "Prefer short-lived bearer tokens.",
+        fingerprint: `basic:${req.template}`,
       });
     }
   }
@@ -321,6 +338,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
               : l.kind === "stack"
                 ? "Debug traces leak paths and versions — fold into recon, not a live spray from this app."
                 : "Treat keys in captures as compromised for the engagement. Rotate in the lab.",
+        fingerprint: `loot:${l.kind}:${l.where}:${l.label}`,
       });
     }
   }
@@ -338,6 +356,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       how: hit.lab
         ? "Invalidate server-side sessions and JWT jti on logout. Replay the post-logout request in a lab proxy."
         : "Outside lab this stays Suspicion until the app's logout policy (server revoke / jti denylist) is evidenced.",
+      fingerprint: `logout:${hit.actor}`,
     });
   }
 
@@ -351,18 +370,12 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       why: "Heuristics look for alg=none, cookie flags, and B 2xx on A's ids. Absence is not a clean bill of health.",
       evidence: [`${ws.requests.length} requests`],
       how: "Capture the same sensitive routes as both roles, including object ids that belong to A.",
+      fingerprint: "none",
     });
   }
 
-  const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-  const dedup = new Map<string, Finding>();
-  for (const f of out) {
-    const k = f.title + f.template;
-    if (!dedup.has(k)) dedup.set(k, f);
-  }
-  return [...dedup.values()].sort((a, b) => rank[a.severity]! - rank[b.severity]!);
+  return mergeFindings(out);
 }
-
 export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Workspace {
   resetParseIds();
   const aParsed = parseActorInput(aRaw, "A");
@@ -372,8 +385,8 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests);
-  const ownedA = ownedObjects(requests, jwts, "A");
-  const ownedB = ownedObjects(requests, jwts, "B");
+  const ownedA = ownedObjects(requests, jwts, "A", cookies);
+  const ownedB = ownedObjects(requests, jwts, "B", cookies);
   const diffs = diffRows(requests, ownedA, ownedB);
   const idsA = actorIds(requests, jwts, "A");
   const idsB = actorIds(requests, jwts, "B");

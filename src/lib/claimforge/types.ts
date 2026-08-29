@@ -79,6 +79,7 @@ export interface Finding {
   evidence: string[];
   template?: string;
   how: string;
+  fingerprint?: string;
 }
 
 export interface DiffRow {

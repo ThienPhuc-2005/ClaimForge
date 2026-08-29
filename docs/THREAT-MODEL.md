@@ -49,6 +49,8 @@ AuthZ pairing is indexed by path (O(A+B)), capped, with per-actor request and bo
 
 Vulnerable and Fixed implementations store traffic in separate buckets. Import uses the **current** mode only so mixed-mode captures cannot pollute findings.
 
+Fixed mode signs HS256 with a **server-only** HMAC key (never shipped to the client bundle). Role is taken from the account record, not from JWT claims, so a forged `role=admin` token is rejected even if the caller knows the client code. Logout records the token `jti` (warm-isolate map plus `lab_revoke` when `DATABASE_URL` is set) instead of a process-only `Set` of raw tokens.
+
 ## Limitations
 
 - Incomplete JSON captures used to recurse (`parseHarLike` ↔ `parseRawHttp`) until the stack overflowed. They now fail per actor with a parse error. Parser fuzz lives in CI.

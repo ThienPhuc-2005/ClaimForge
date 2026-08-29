@@ -1,8 +1,10 @@
 import { SignJWT, jwtVerify, decodeProtectedHeader, decodeJwt } from "jose";
 import { mintJwt } from "../claimforge/jwt.ts";
-import { LAB_SECRET, LAB_USERS } from "./constants.ts";
+import { LAB_USERS } from "./constants.ts";
+import { isJtiRevoked, resetRevokeState, revokeJti } from "./revoke.ts";
+import { labHmacBytes } from "./secret.ts";
 
-export { LAB_SECRET, LAB_USERS };
+export { LAB_USERS };
 
 const INVOICES: Record<number, { id: number; ownerId: string; total: number; secretLast4: string }> = {
   5512: { id: 5512, ownerId: "alice", total: 480, secretLast4: "8211" },
@@ -11,19 +13,15 @@ const INVOICES: Record<number, { id: number; ownerId: string; total: number; sec
 
 export type LabMode = "vulnerable" | "fixed";
 
-const denylist = new Set<string>();
-
-function secretBytes() {
-  return new TextEncoder().encode(LAB_SECRET);
-}
-
 export async function mintLabToken(sub: string, extra: Record<string, unknown> = {}): Promise<string> {
-  return new SignJWT({ sub, role: "user", ...extra })
+  const user = Object.values(LAB_USERS).find((x) => x.sub === sub);
+  const role = user?.role ?? "user";
+  return new SignJWT({ sub, ...extra, role })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
     .setExpirationTime("2h")
-    .setJti(`${sub}-${Date.now()}`)
-    .sign(secretBytes());
+    .setJti(`${sub}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+    .sign(labHmacBytes());
 }
 
 interface LabUser {
@@ -33,24 +31,36 @@ interface LabUser {
   role: string;
 }
 
-async function authenticate(req: Request, mode: LabMode): Promise<{ user: LabUser; token: string } | { error: string; status: number }> {
+async function authenticate(req: Request, mode: LabMode): Promise<{ user: LabUser; token: string; jti: string } | { error: string; status: number }> {
   const auth = req.headers.get("authorization") ?? "";
   const m = auth.match(/^Bearer\s+(\S+)/i);
   if (!m) return { error: "missing bearer", status: 401 };
   const token = m[1]!;
-  if (mode === "fixed" && denylist.has(token)) return { error: "revoked", status: 401 };
   try {
     const header = decodeProtectedHeader(token);
     const alg = String(header.alg ?? "").toLowerCase();
     if (mode === "fixed") {
-      if (alg === "none" || alg === "n0ne") return { error: "alg none rejected", status: 401 };
-      const { payload } = await jwtVerify(token, secretBytes(), { algorithms: ["HS256"] });
+      if (alg === "none" || alg === "n0ne" || !token.split(".")[2]) {
+        return { error: "alg none rejected", status: 401 };
+      }
+      let payload: Record<string, unknown>;
+      try {
+        const verified = await jwtVerify(token, labHmacBytes(), { algorithms: ["HS256"] });
+        payload = verified.payload as Record<string, unknown>;
+      } catch {
+        return { error: "bad token", status: 401 };
+      }
+      const jti = String(payload.jti ?? "");
+      if (jti && (await isJtiRevoked(jti))) return { error: "revoked", status: 401 };
       const sub = String(payload.sub ?? "");
       const u = Object.values(LAB_USERS).find((x) => x.sub === sub);
       if (!u) return { error: "unknown sub", status: 401 };
-      return { user: { sub: u.sub, email: u.email, invoices: u.invoices, role: String(payload.role ?? "user") }, token };
+      return {
+        user: { sub: u.sub, email: u.email, invoices: u.invoices, role: u.role },
+        token,
+        jti,
+      };
     }
-    // Vulnerable: accept alg=none and skip HMAC.
     if (alg === "none" || alg === "n0ne" || !token.split(".")[2]) {
       const payload = decodeJwt(token);
       const sub = String(payload.sub ?? "");
@@ -62,10 +72,11 @@ async function authenticate(req: Request, mode: LabMode): Promise<{ user: LabUse
           role: String(payload.role ?? "user"),
         },
         token,
+        jti: String(payload.jti ?? ""),
       };
     }
     try {
-      const { payload } = await jwtVerify(token, secretBytes(), { algorithms: ["HS256"] });
+      const { payload } = await jwtVerify(token, labHmacBytes(), { algorithms: ["HS256"] });
       const sub = String(payload.sub ?? "");
       const u = Object.values(LAB_USERS).find((x) => x.sub === sub);
       return {
@@ -76,6 +87,7 @@ async function authenticate(req: Request, mode: LabMode): Promise<{ user: LabUse
           role: String(payload.role ?? "user"),
         },
         token,
+        jti: String(payload.jti ?? ""),
       };
     } catch {
       const payload = decodeJwt(token);
@@ -83,6 +95,7 @@ async function authenticate(req: Request, mode: LabMode): Promise<{ user: LabUse
       return {
         user: { sub, email: `${sub}@lab.test`, invoices: [], role: String(payload.role ?? "user") },
         token,
+        jti: String(payload.jti ?? ""),
       };
     }
   } catch {
@@ -122,14 +135,22 @@ export async function handleLabRequest(req: Request): Promise<Response> {
     const u = Object.values(LAB_USERS).find((x) => x.email === body.email && x.password === body.password);
     if (!u) return json(401, { error: "invalid credentials" });
     const token = await mintLabToken(u.sub);
-    denylist.delete(token);
-    return json(200, { token, user: { id: u.sub, role: "user" } });
+    return json(200, { token, user: { id: u.sub, role: u.role } });
   }
 
   if (path === "/api/lab/logout" && method === "POST") {
     const auth = await authenticate(req, mode);
     if ("error" in auth) return json(auth.status, { error: auth.error });
-    if (mode === "fixed") denylist.add(auth.token);
+    if (mode === "fixed") {
+      let exp = Math.floor(Date.now() / 1000) + 7200;
+      try {
+        const payload = decodeJwt(auth.token);
+        if (typeof payload.exp === "number") exp = payload.exp;
+      } catch {
+        /* default ttl */
+      }
+      await revokeJti(auth.jti, exp);
+    }
     return json(200, { ok: true, revoked: mode === "fixed" });
   }
 
@@ -183,5 +204,5 @@ export async function handleLabRequest(req: Request): Promise<Response> {
 }
 
 export function resetLabState() {
-  denylist.clear();
+  resetRevokeState();
 }

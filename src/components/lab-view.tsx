@@ -1,6 +1,4 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { CopyBtn } from "@/components/copy-btn";
-import { LAB_SECRET } from "@/lib/lab/constants";
 import { useForge } from "@/lib/claimforge/store";
 
 type Mode = "vulnerable" | "fixed";
@@ -196,7 +194,7 @@ export function LabView() {
         <p className="text-xs leading-relaxed text-muted">
           {mode === "vulnerable"
             ? "No object ACL, alg=none accepted, logout does not revoke the bearer."
-            : "Owner check on invoices, HS256 only, logout denylists the token."}
+            : "Owner check on invoices, HS256 with a server-only key, role from the account record, logout revokes jti."}
         </p>
         {mixedHint && <p className="text-xs text-warn">{mixedHint}</p>}
       </fieldset>
@@ -217,10 +215,6 @@ export function LabView() {
           Clear {mode} bucket
         </LabBtn>
       </div>
-      <p className="text-xs text-muted">
-        HMAC secret for Forge verify (lab tokens): <code className="font-mono">{LAB_SECRET}</code>
-      </p>
-      <CopyBtn text={LAB_SECRET} label="Copy lab HMAC" />
       <ol className="list-decimal space-y-1 pl-5 text-sm leading-relaxed text-muted">
         <li>BOLA — bob reads alice invoice 5512 (200 vs 403).</li>
         <li>JWT — alg=none admin token against /admin/users (200 vs 401).</li>
