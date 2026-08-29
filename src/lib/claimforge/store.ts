@@ -14,6 +14,8 @@ interface ForgeState {
   persistCaptures: boolean;
   analyzing: boolean;
   importError: string | null;
+  parseErrorA: string | null;
+  parseErrorB: string | null;
   tab: "findings" | "playbook" | "forge" | "diff" | "graph" | "loot" | "timeline" | "traffic" | "lab";
   workspace: Workspace;
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
@@ -29,6 +31,13 @@ function emptyWs(aLabel: string, bLabel: string): Workspace {
   return analyze("", "", aLabel, bLabel);
 }
 
+function parseFields(ws: Workspace) {
+  return {
+    parseErrorA: ws.parseErrorA ?? null,
+    parseErrorB: ws.parseErrorB ?? null,
+  };
+}
+
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let runGen = 0;
 
@@ -42,6 +51,8 @@ export const useForge = create<ForgeState>()(
       persistCaptures: false,
       analyzing: false,
       importError: null,
+      parseErrorA: null,
+      parseErrorB: null,
       tab: "findings",
       workspace: emptyWs(DEMO_A_LABEL, DEMO_B_LABEL),
       setActor: (side, raw, immediate) => {
@@ -58,7 +69,7 @@ export const useForge = create<ForgeState>()(
           void analyzeAsync(aRaw, bRaw, get().aLabel, get().bLabel)
             .then((workspace) => {
               if (gen !== runGen) return;
-              set({ workspace, analyzing: false });
+              set({ workspace, analyzing: false, ...parseFields(workspace) });
             })
             .catch((e) => {
               if (gen !== runGen) return;
@@ -76,7 +87,8 @@ export const useForge = create<ForgeState>()(
       setLabel: (side, label) => {
         const aLabel = side === "a" ? label : get().aLabel;
         const bLabel = side === "b" ? label : get().bLabel;
-        set({ aLabel, bLabel, workspace: analyze(get().aRaw, get().bRaw, aLabel, bLabel) });
+        const workspace = analyze(get().aRaw, get().bRaw, aLabel, bLabel);
+        set({ aLabel, bLabel, workspace, ...parseFields(workspace) });
       },
       setTab: (tab) => set({ tab }),
       setPersistCaptures: (persistCaptures) => set({ persistCaptures }),
@@ -84,6 +96,7 @@ export const useForge = create<ForgeState>()(
       loadDemo: () => {
         const aRaw = demoActorA();
         const bRaw = demoActorB();
+        const workspace = analyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL);
         set({
           aLabel: DEMO_A_LABEL,
           bLabel: DEMO_B_LABEL,
@@ -91,7 +104,8 @@ export const useForge = create<ForgeState>()(
           bRaw,
           tab: "findings",
           importError: null,
-          workspace: analyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL),
+          workspace,
+          ...parseFields(workspace),
         });
       },
       clearAll: () => {
@@ -99,6 +113,8 @@ export const useForge = create<ForgeState>()(
           aRaw: "",
           bRaw: "",
           importError: null,
+          parseErrorA: null,
+          parseErrorB: null,
           workspace: emptyWs(get().aLabel, get().bLabel),
         });
       },
@@ -132,6 +148,8 @@ export const useForge = create<ForgeState>()(
           state.bRaw = "";
         }
         state.workspace = analyze(state.aRaw, state.bRaw, state.aLabel, state.bLabel);
+        state.parseErrorA = state.workspace.parseErrorA ?? null;
+        state.parseErrorB = state.workspace.parseErrorB ?? null;
       },
     },
   ),

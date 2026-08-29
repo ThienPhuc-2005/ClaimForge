@@ -9,7 +9,7 @@ import type {
 } from "./types.ts";
 import { headerValue, headerValues, parseCookieHeader, parseSetCookie } from "./cookies.ts";
 import { extractJwtStrings, inspectJwt, jwtSubject } from "./jwt.ts";
-import { parseHarLike, parseJwtPasted, resetParseIds } from "./parse.ts";
+import { parseActorInput, resetParseIds } from "./parse.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
@@ -148,6 +148,13 @@ function diffRows(
   return rows.sort((x, y) => x.template.localeCompare(y.template));
 }
 
+function corsHow(value: string): string {
+  if (/reflected Origin/i.test(value)) {
+    return "Reflected ACAO plus Access-Control-Allow-Credentials can let that origin read authenticated responses. ACAO * with credentials is invalid and is not this bug.";
+  }
+  return "Wildcard ACAO without credentials is not a credentialed-read bug. Browsers reject ACAO * + credentials=true.";
+}
+
 function findings(ws: Omit<Workspace, "findings">): Finding[] {
   const out: Finding[] = [];
   let n = 0;
@@ -158,14 +165,15 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
 
   for (const jwt of ws.jwts) {
     for (const issue of jwt.issues) {
+      const infoOnly = /no iss claim|no aud claim|already expired|nbf in the future|lifetime >/i.test(issue);
       const sev = issue.includes("none") || issue.includes("unsigned") || issue.includes("jwk") ? "high" : "medium";
       add({
-        severity: issue.includes("expired") ? "info" : sev,
+        severity: infoOnly ? "info" : issue.includes("expired") ? "info" : sev,
         confidence: "observation",
         title: `JWT · actor ${jwt.actor}: ${issue.split("—")[0]}`,
         why: issue,
         evidence: [`alg=${jwt.alg ?? "?"}`, `src=${jwt.source}`, `sub=${jwtSubject(jwt) ?? "?"}`],
-        how: "Confirm the API rejects alg=none, embedded jwk, and unsigned tokens. Do not send forged tokens at live hosts from this app — export and replay in your proxy against a lab.",
+        how: "Confirm the API rejects alg=none, embedded jwk, and unsigned tokens. Verify RS256 against a JWKS/public key and bind iss/aud. Do not send forged tokens at live hosts from this app — export and replay in your proxy against a lab.",
       });
     }
   }
@@ -286,7 +294,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (l.kind === "cors" || l.kind === "stack" || l.kind === "mass-assign" || l.kind === "key") {
       add({
         severity: l.severity,
-        confidence: "observation",
+        confidence: l.kind === "cors" && /reflected/i.test(l.value) ? "suspicion" : "observation",
         title: `${l.label} · ${l.where}`,
         why: l.value,
         evidence: [l.kind, l.where],
@@ -294,7 +302,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
           l.kind === "mass-assign"
             ? "In Repeater, toggle one privileged field. If the object mutates, the API binds client-supplied ownership."
             : l.kind === "cors"
-              ? "CORS with credentials or * lets a browser origin read authenticated responses."
+              ? corsHow(l.value)
               : l.kind === "stack"
                 ? "Debug traces leak paths and versions — fold into recon, not a live spray from this app."
                 : "Treat keys in captures as compromised for the engagement. Rotate in the lab.",
@@ -304,13 +312,17 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
 
   for (const hit of tokensAliveAfterLogout(ws.requests)) {
     add({
-      severity: "high",
-      confidence: "confirmed",
+      severity: hit.confidence === "confirmed" ? "high" : "medium",
+      confidence: hit.confidence,
       title: `Session lives after logout · actor ${hit.actor}`,
-      why: `${hit.method} ${hit.path} still returned ${hit.status} with a credential used before logout.`,
-      evidence: [`${hit.method} ${hit.path}`, hit.tokenHint],
+      why: hit.logoutOk
+        ? `${hit.method} ${hit.path} still returned ${hit.status} with a credential used before a 2xx logout.`
+        : `${hit.method} ${hit.path} still returned ${hit.status} after a logout-shaped request — logout success was not observed, so this is not confirmed.`,
+      evidence: [`${hit.method} ${hit.path}`, hit.tokenHint, hit.lab ? "lab host" : "outside lab"],
       template: hit.path,
-      how: "Invalidate server-side sessions and JWT jti on logout. Replay the post-logout request in a lab proxy.",
+      how: hit.lab
+        ? "Invalidate server-side sessions and JWT jti on logout. Replay the post-logout request in a lab proxy."
+        : "Outside lab this stays Suspicion until the app's logout policy (server revoke / jti denylist) is evidenced.",
     });
   }
 
@@ -338,8 +350,10 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
 
 export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Workspace {
   resetParseIds();
-  const aReq = [...parseHarLike(aRaw, "A"), ...parseJwtPasted(aRaw, "A")];
-  const bReq = [...parseHarLike(bRaw, "B"), ...parseJwtPasted(bRaw, "B")];
+  const aParsed = parseActorInput(aRaw, "A");
+  const bParsed = parseActorInput(bRaw, "B");
+  const aReq = aParsed.requests;
+  const bReq = bParsed.requests;
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests);
@@ -348,7 +362,6 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   const diffs = diffRows(requests, ownedA, ownedB);
   const idsA = actorIds(requests, jwts, "A");
   const idsB = actorIds(requests, jwts, "B");
-  // keep inventory lists inclusive for the loot wordlist
   const idsAAll = [...new Set([...idsA, ...ownedA])];
   const idsBAll = [...new Set([...idsB, ...ownedB])];
   const graph = buildIdGraph(requests, jwts, aLabel, bLabel);
@@ -371,6 +384,8 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
     loot,
     wordlists,
     surface,
+    parseErrorA: aParsed.error,
+    parseErrorB: bParsed.error,
   };
   const withFindings = { ...pre, findings: findings({ ...pre, paths: [], replays: [] }) };
   const paths = buildPaths(withFindings);

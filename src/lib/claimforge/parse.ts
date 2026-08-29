@@ -7,6 +7,13 @@ import { headerValue, headerValues } from "./cookies.ts";
 
 export { resetParseIds, templatize };
 
+const MAX_PARSE_DEPTH = 8;
+
+function isJsonish(s: string): boolean {
+  const t = s.trimStart();
+  return t.startsWith("{") || t.startsWith("[");
+}
+
 function headersFromObject(h: unknown): HttpHeader[] {
   if (!h) return [];
   if (Array.isArray(h)) {
@@ -106,41 +113,54 @@ function fromHarEntry(entry: Record<string, unknown>, actor: ActorId): CapturedR
   };
 }
 
-export function parseHarLike(raw: string, actor: ActorId): CapturedRequest[] {
+function entriesFromJson(json: unknown, actor: ActorId): CapturedRequest[] | null {
+  const log = (json as { log?: { entries?: unknown[] } }).log;
+  const entries = log?.entries ?? (Array.isArray(json) ? json : null);
+  if (Array.isArray(entries)) {
+    return entries
+      .map((e) => (e && typeof e === "object" ? fromHarEntry(e as Record<string, unknown>, actor) : null))
+      .filter((x): x is CapturedRequest => x !== null);
+  }
+  if (json && typeof json === "object" && "request" in (json as object)) {
+    const one = fromHarEntry(json as Record<string, unknown>, actor);
+    return one ? [one] : [];
+  }
+  return null;
+}
+
+/**
+ * Parse HAR / Burp / raw HTTP. Incomplete JSON must not bounce into parseRawHttp
+ * (that used to recurse parseHarLike ↔ parseRawHttp until the stack blew).
+ */
+export function parseHarLike(raw: string, actor: ActorId, depth = 0): CapturedRequest[] {
+  if (depth > MAX_PARSE_DEPTH) return [];
   const trimmed = raw.trim();
   if (!trimmed) return [];
   if (looksLikeBurpXml(trimmed)) {
     const items = parseBurpXml(trimmed, actor);
     if (items.length) return items;
   }
-  try {
-    const json = JSON.parse(trimmed) as unknown;
-    const log = (json as { log?: { entries?: unknown[] } }).log;
-    const entries = log?.entries ?? (Array.isArray(json) ? json : null);
-    if (Array.isArray(entries)) {
-      return entries
-        .map((e) => (e && typeof e === "object" ? fromHarEntry(e as Record<string, unknown>, actor) : null))
-        .filter((x): x is CapturedRequest => x !== null);
+  if (isJsonish(trimmed)) {
+    try {
+      const json = JSON.parse(trimmed) as unknown;
+      const fromJson = entriesFromJson(json, actor);
+      return fromJson ?? [];
+    } catch {
+      return [];
     }
-    if (json && typeof json === "object" && "request" in (json as object)) {
-      const one = fromHarEntry(json as Record<string, unknown>, actor);
-      return one ? [one] : [];
-    }
-  } catch {
-    /* raw HTTP */
   }
-  return parseRawHttp(trimmed, actor);
+  return parseRawHttp(trimmed, actor, depth);
 }
 
-function parseRawHttp(raw: string, actor: ActorId): CapturedRequest[] {
+function parseRawHttp(raw: string, actor: ActorId, depth: number): CapturedRequest[] {
   const blocks = raw
     .split(/\n-{3,}\n/)
     .map((b) => b.trim())
     .filter(Boolean);
   const out: CapturedRequest[] = [];
   for (const block of blocks) {
-    if (block.startsWith("{") || block.startsWith("[")) {
-      out.push(...parseHarLike(block, actor));
+    if (isJsonish(block)) {
+      out.push(...parseHarLike(block, actor, depth + 1));
       continue;
     }
     const jwtOnly = extractJwtStrings(block);
@@ -183,4 +203,34 @@ export function parseJwtPasted(raw: string, actor: ActorId): CapturedRequest[] {
       timeMs: 0,
     };
   });
+}
+
+export interface ActorParseResult {
+  requests: CapturedRequest[];
+  error?: string;
+}
+
+/** Per-actor parse with a distinct error string for incomplete JSON / crashes. */
+export function parseActorInput(raw: string, actor: ActorId): ActorParseResult {
+  const trimmed = raw.trim();
+  if (!trimmed) return { requests: [] };
+  if (isJsonish(trimmed)) {
+    try {
+      JSON.parse(trimmed);
+    } catch {
+      return {
+        requests: parseJwtPasted(trimmed, actor),
+        error: `Actor ${actor}: capture looks like JSON but is incomplete or invalid.`,
+      };
+    }
+  }
+  try {
+    const requests = [...parseHarLike(trimmed, actor), ...parseJwtPasted(trimmed, actor)];
+    return { requests };
+  } catch (e) {
+    return {
+      requests: [],
+      error: `Actor ${actor}: ${e instanceof Error ? e.message : "parse failed"}`,
+    };
+  }
 }

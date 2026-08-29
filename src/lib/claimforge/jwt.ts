@@ -1,4 +1,13 @@
-import { SignJWT, jwtVerify, decodeJwt, decodeProtectedHeader } from "jose";
+import {
+  SignJWT,
+  jwtVerify,
+  decodeJwt,
+  decodeProtectedHeader,
+  importSPKI,
+  importX509,
+  createRemoteJWKSet,
+  type JWTVerifyGetKey,
+} from "jose";
 import type { JwtToken, ActorId, JwtSigStatus } from "./types.ts";
 
 function b64urlToUtf8(input: string): string {
@@ -24,6 +33,9 @@ function parseJson(s: string): Record<string, unknown> {
 
 /** Compact JWT: two or three segments. Third group is greedy so a signature is not split off as a second token. */
 const JWT_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/g;
+
+const ASYM_ALGS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"] as const;
+const HS_ALGS = ["HS256", "HS384", "HS512"] as const;
 
 export function extractJwtStrings(text: string): string[] {
   const found = new Set<string>();
@@ -81,6 +93,8 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
     if (exp - (iat ?? now) > 60 * 60 * 24 * 30) issues.push("lifetime > 30 days");
   }
   if (nbf != null && nbf > now + 60) issues.push("nbf in the future");
+  if (payload.iss == null || payload.iss === "") issues.push("no iss claim — issuer not bound");
+  if (payload.aud == null || payload.aud === "") issues.push("no aud claim — audience not bound");
   const role = String(payload.role ?? payload.roles ?? payload.is_admin ?? payload.admin ?? "");
   if (/admin|root|superuser/i.test(role)) issues.push(`privileged role claim: ${role}`);
   if (payload.sub && payload.userId && String(payload.sub) !== String(payload.userId))
@@ -89,22 +103,72 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
   return { actor, raw, source, header, payload, alg, parts, signature, sigStatus, issues };
 }
 
+export interface JwtVerifyOptions {
+  secret?: string;
+  publicKeyPem?: string;
+  jwksUrl?: string;
+  issuer?: string;
+  audience?: string | string[];
+}
+
+async function importPublic(pem: string, alg: string): Promise<CryptoKey> {
+  const trimmed = pem.trim();
+  if (/BEGIN CERTIFICATE/.test(trimmed)) return importX509(trimmed, alg);
+  return importSPKI(trimmed, alg);
+}
+
+function verifyOpts(opts: JwtVerifyOptions) {
+  return {
+    issuer: opts.issuer || undefined,
+    audience: opts.audience || undefined,
+  };
+}
+
 /** Verify HS256 (or reject alg=none) with jose. Mutates a copy of inspectJwt. */
 export async function verifyJwtWithSecret(token: JwtToken, secret: string): Promise<JwtToken> {
+  return verifyJwtWithKey(token, { secret });
+}
+
+/** Verify HS* with a secret, RS/PS/ES with PEM or JWKS, optionally checking iss/aud. */
+export async function verifyJwtWithKey(token: JwtToken, opts: JwtVerifyOptions): Promise<JwtToken> {
   const next = { ...token, issues: [...token.issues] };
   const algLc = (token.alg ?? "").toLowerCase();
   if (!token.signature || algLc === "none" || algLc === "n0ne") {
     next.sigStatus = "unsigned";
     return next;
   }
+  const extra = verifyOpts(opts);
   try {
-    const { payload, protectedHeader } = await jwtVerify(token.raw, secretKey(secret), {
-      algorithms: ["HS256", "HS384", "HS512"],
+    let key: CryptoKey | Uint8Array | JWTVerifyGetKey;
+    let algorithms: string[];
+    if (opts.jwksUrl) {
+      const url = new URL(opts.jwksUrl);
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        throw new Error("JWKS URL must be http(s)");
+      }
+      key = createRemoteJWKSet(url);
+      algorithms = [...ASYM_ALGS];
+    } else if (opts.publicKeyPem) {
+      const alg = token.alg && ASYM_ALGS.includes(token.alg as (typeof ASYM_ALGS)[number]) ? token.alg : "RS256";
+      key = await importPublic(opts.publicKeyPem, alg);
+      algorithms = [...ASYM_ALGS];
+    } else if (opts.secret) {
+      key = secretKey(opts.secret);
+      algorithms = [...HS_ALGS];
+    } else {
+      next.issues.push("no HMAC secret, public key, or JWKS URL provided");
+      return next;
+    }
+    const { payload, protectedHeader } = await jwtVerify(token.raw, key, {
+      algorithms,
+      ...extra,
     });
     next.sigStatus = "verified";
     next.header = { ...next.header, ...(protectedHeader as Record<string, unknown>) };
     next.payload = { ...next.payload, ...(payload as Record<string, unknown>) };
     next.issues = next.issues.filter((i) => !/unsigned/i.test(i));
+    if (opts.issuer) next.issues = next.issues.filter((i) => !/no iss claim/i.test(i));
+    if (opts.audience) next.issues = next.issues.filter((i) => !/no aud claim/i.test(i));
   } catch (e) {
     next.sigStatus = "invalid";
     next.issues.push(`signature invalid (${e instanceof Error ? e.message : "verify failed"})`);
@@ -151,7 +215,23 @@ export async function signHs256(
   let jwt = new SignJWT(payload).setProtectedHeader({ alg: "HS256", typ: "JWT", ...rest });
   if (typeof payload.iat !== "number") jwt = jwt.setIssuedAt();
   if (typeof payload.exp !== "number") jwt = jwt.setExpirationTime("2h");
+  if (typeof payload.iss === "string") jwt = jwt.setIssuer(payload.iss);
+  if (typeof payload.aud === "string") jwt = jwt.setAudience(payload.aud);
   return jwt.sign(secretKey(secret));
+}
+
+export async function signRs256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  header: Record<string, unknown> = {},
+): Promise<string> {
+  const { alg: _a, ...rest } = header;
+  let jwt = new SignJWT(payload).setProtectedHeader({ alg: "RS256", typ: "JWT", ...rest });
+  if (typeof payload.iat !== "number") jwt = jwt.setIssuedAt();
+  if (typeof payload.exp !== "number") jwt = jwt.setExpirationTime("2h");
+  if (typeof payload.iss === "string") jwt = jwt.setIssuer(payload.iss);
+  if (typeof payload.aud === "string") jwt = jwt.setAudience(payload.aud);
+  return jwt.sign(privateKey);
 }
 
 export function jwtSubject(token: JwtToken): string | null {

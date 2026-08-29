@@ -7,7 +7,7 @@ import {
   ShieldAlert,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useForge } from "@/lib/claimforge/store";
 import { IdGraph } from "@/components/id-graph";
@@ -51,6 +51,8 @@ function Home() {
     setPersistCaptures,
     analyzing,
     importError,
+    parseErrorA,
+    parseErrorB,
   } = useForge();
   const crit = workspace.findings.filter((f) => f.severity === "critical").length;
   const high = workspace.findings.filter((f) => f.severity === "high").length;
@@ -129,8 +131,8 @@ function Home() {
           <div className="flex items-center gap-2">
             <KeyRound className="size-5 text-accent" strokeWidth={1.75} aria-hidden />
             <div>
-              <p className="text-sm font-semibold tracking-tight">ClaimForge</p>
-              <p className="text-xs text-muted">Red team auth desk · offline</p>
+              <h1 className="text-sm font-semibold tracking-tight">ClaimForge</h1>
+              <p className="text-xs text-muted">Red team auth desk · client-side processing</p>
             </div>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -186,30 +188,11 @@ function Home() {
         </dl>
       </header>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_1fr] md:p-6">
-        <aside className="flex flex-col gap-3" aria-label="Actor captures">
-          <ImportCard
-            actor="A"
-            label={aLabel}
-            raw={aRaw}
-            onLabel={(v) => setLabel("a", v)}
-            onRaw={(v, immediate) => setActor("a", v, immediate)}
-          />
-          <ImportCard
-            actor="B"
-            label={bLabel}
-            raw={bRaw}
-            onLabel={(v) => setLabel("b", v)}
-            onRaw={(v, immediate) => setActor("b", v, immediate)}
-          />
-          <p className="text-xs leading-relaxed text-muted">
-            Drop HAR or Burp XML for two roles. Captures are not saved unless you opt in. Export redacts JWT, cookie,
-            and bearer values.
-          </p>
-        </aside>
-
-        <section id="desk" className="min-w-0 rounded-xl border border-border bg-surface p-3 md:p-4">
-          <div
+      <main className="grid gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_1fr] md:p-6">
+        <section
+          id="desk"
+          className="order-1 min-w-0 rounded-xl border border-border bg-surface p-3 md:p-4 lg:order-2 lg:col-start-2 lg:row-start-1"
+        >          <div
             className="flex gap-1 overflow-x-auto pb-3"
             role="tablist"
             aria-label="Analysis views"
@@ -247,7 +230,33 @@ function Home() {
             {tab === "lab" && <LabView />}
           </div>
         </section>
-      </div>
+
+        <aside
+          className="order-2 flex flex-col gap-3 lg:order-1 lg:col-start-1 lg:row-start-1"
+          aria-label="Actor captures"
+        >
+          <ImportCard
+            actor="A"
+            label={aLabel}
+            raw={aRaw}
+            parseError={parseErrorA}
+            onLabel={(v) => setLabel("a", v)}
+            onRaw={(v, immediate) => setActor("a", v, immediate)}
+          />
+          <ImportCard
+            actor="B"
+            label={bLabel}
+            raw={bRaw}
+            parseError={parseErrorB}
+            onLabel={(v) => setLabel("b", v)}
+            onRaw={(v, immediate) => setActor("b", v, immediate)}
+          />
+          <p className="text-xs leading-relaxed text-muted">
+            Drop HAR or Burp XML for two roles. Analysis is client-side in this browser (a hosted shell may still load
+            platform scripts). Captures are not saved unless you opt in. Export redacts JWT, cookie, and bearer values.
+          </p>
+        </aside>
+      </main>
     </div>
   );
 }
@@ -321,65 +330,95 @@ function ImportCard({
   actor,
   label,
   raw,
+  parseError,
   onLabel,
   onRaw,
 }: {
   actor: "A" | "B";
   label: string;
   raw: string;
+  parseError: string | null;
   onLabel: (v: string) => void;
   onRaw: (v: string, immediate?: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const setImportError = useForge((s) => s.setImportError);
   const mb = Math.round(MAX_CAPTURE_BYTES / (1024 * 1024));
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const apply = () => setOpen(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
   return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted">Actor {actor}</span>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          onClick={() => inputRef.current?.click()}
-          aria-label={`Upload capture file for actor ${actor}`}
-        >
-          <Upload className="size-3.5" aria-hidden /> File
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".har,.json,.txt,.xml,application/json,text/xml,application/xml"
-          className="hidden"
-          aria-label={`Upload capture for actor ${actor}, maximum ${mb} megabytes`}
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            if (f.size > MAX_CAPTURE_BYTES) {
-              setImportError(`Capture exceeds ${mb} MB limit.`);
+    <details
+      className="rounded-xl border border-border bg-surface p-3"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-fg">
+        <span>
+          Actor {actor}
+          <span className="ml-2 text-xs font-normal text-muted">{label || "unnamed"}</span>
+        </span>
+        <span className="text-xs text-subtle">{raw ? `${Math.round(raw.length / 1024)} KB` : "empty"}</span>
+      </summary>
+      <div className="mt-2">
+        <div className="mb-2 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={() => inputRef.current?.click()}
+            aria-label={`Upload capture file for actor ${actor}`}
+          >
+            <Upload className="size-3.5" aria-hidden /> File
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".har,.json,.txt,.xml,application/json,text/xml,application/xml"
+            className="hidden"
+            aria-label={`Upload capture for actor ${actor}, maximum ${mb} megabytes`}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.size > MAX_CAPTURE_BYTES) {
+                setImportError(`Capture exceeds ${mb} MB limit.`);
+                e.target.value = "";
+                return;
+              }
+              onRaw(await f.text(), true);
               e.target.value = "";
-              return;
-            }
-            onRaw(await f.text(), true);
-            e.target.value = "";
-          }}
+            }}
+          />
+        </div>
+        <input
+          value={label}
+          onChange={(e) => onLabel(e.target.value)}
+          aria-label={`Actor ${actor} name`}
+          className="mb-2 h-11 w-full rounded-md border border-border bg-elevated px-3 text-sm text-fg outline-none ring-accent focus:ring-2"
         />
+        <textarea
+          value={raw}
+          onChange={(e) => onRaw(e.target.value)}
+          spellCheck={false}
+          aria-invalid={Boolean(parseError)}
+          aria-describedby={parseError ? `parse-err-${actor}` : undefined}
+          aria-label={`Capture paste for actor ${actor}`}
+          placeholder="HAR, Burp XML, raw HTTP, or JWT"
+          className="h-28 w-full resize-y rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2 md:h-36"
+        />
+        {parseError ? (
+          <p id={`parse-err-${actor}`} className="mt-1 text-xs text-danger" role="alert">
+            {parseError}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-subtle">Max {mb} MB · paste is debounced</p>
+        )}
       </div>
-      <input
-        value={label}
-        onChange={(e) => onLabel(e.target.value)}
-        aria-label={`Actor ${actor} name`}
-        className="mb-2 h-11 w-full rounded-md border border-border bg-elevated px-3 text-sm text-fg outline-none ring-accent focus:ring-2"
-      />
-      <textarea
-        value={raw}
-        onChange={(e) => onRaw(e.target.value)}
-        spellCheck={false}
-        aria-label={`Capture paste for actor ${actor}`}
-        placeholder="HAR, Burp XML, raw HTTP, or JWT"
-        className="h-28 w-full resize-y rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2 md:h-36"
-      />
-      <p className="mt-1 text-xs text-subtle">Max {mb} MB · paste is debounced</p>
-    </div>
+    </details>
   );
 }
 

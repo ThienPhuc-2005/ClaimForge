@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractJwtStrings, inspectJwt, mintJwt, signHs256, verifyJwtWithSecret } from "./jwt.ts";
+import { exportSPKI, generateKeyPair } from "jose";
+import {
+  extractJwtStrings,
+  inspectJwt,
+  mintJwt,
+  signHs256,
+  signRs256,
+  verifyJwtWithKey,
+  verifyJwtWithSecret,
+} from "./jwt.ts";
 import { analyze } from "./analyze.ts";
 import { demoActorA, demoActorB } from "./demo.ts";
 
@@ -92,7 +101,7 @@ test("lab demo: alice none is unsigned; bob HS256 is unverified", () => {
 });
 
 test("jose signs and verifies HS256; wrong secret is invalid", async () => {
-  const token = await signHs256({ sub: "alice", role: "user" }, "lab-secret-1");
+  const token = await signHs256({ sub: "alice", role: "user", iss: "lab", aud: "api" }, "lab-secret-1");
   const ins = inspectJwt(token, "A", "forge");
   assert.equal(ins?.sigStatus, "unverified");
   assert.equal(ins?.parts, 3);
@@ -100,4 +109,31 @@ test("jose signs and verifies HS256; wrong secret is invalid", async () => {
   assert.equal(ok.sigStatus, "verified");
   const bad = await verifyJwtWithSecret(ins!, "wrong");
   assert.equal(bad.sigStatus, "invalid");
+});
+
+test("RS256 verifies with PEM public key and checks iss/aud", async () => {
+  const { publicKey, privateKey } = await generateKeyPair("RS256");
+  const pem = await exportSPKI(publicKey);
+  const token = await signRs256({ sub: "alice", iss: "https://issuer.lab", aud: "claimforge" }, privateKey);
+  const ins = inspectJwt(token, "A", "rs");
+  assert.equal(ins?.alg, "RS256");
+  assert.ok(ins?.issues.some((i) => /no iss claim/i.test(i)) === false);
+  const ok = await verifyJwtWithKey(ins!, {
+    publicKeyPem: pem,
+    issuer: "https://issuer.lab",
+    audience: "claimforge",
+  });
+  assert.equal(ok.sigStatus, "verified");
+  const badAud = await verifyJwtWithKey(ins!, {
+    publicKeyPem: pem,
+    issuer: "https://issuer.lab",
+    audience: "other",
+  });
+  assert.equal(badAud.sigStatus, "invalid");
+});
+
+test("inspectJwt flags missing iss and aud", () => {
+  const ins = inspectJwt(HS256, "A", "auth");
+  assert.ok(ins?.issues.some((i) => /no iss claim/i.test(i)));
+  assert.ok(ins?.issues.some((i) => /no aud claim/i.test(i)));
 });

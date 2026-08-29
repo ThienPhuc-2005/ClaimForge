@@ -13,7 +13,8 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Offline authentication differential analysis — JWT, cookies, session timeline, two-account BOLA/IDOR.",
+        content:
+          "Client-side authentication differential analysis — JWT (HS/RS), cookies, session timeline, two-account BOLA/IDOR. Captures never leave the browser except optional JWKS fetch.",
       },
       { name: "theme-color", content: "#09090b" },
     ],
@@ -22,16 +23,6 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      {
-        rel: "preconnect",
-        href: "https://fonts.gstatic.com",
-        crossOrigin: "anonymous",
-      },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap",
-      },
     ],
   }),
   component: () => (

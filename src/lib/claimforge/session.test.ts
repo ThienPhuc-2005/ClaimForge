@@ -32,16 +32,16 @@ test("timeline classifies login refresh logout", () => {
   assert.equal(classifyTimeline(req({ method: "GET", path: "/api/me", template: "/api/me", requestHeaders: [{ name: "Authorization", value: "Bearer a.b.c" }] })).kind, "authz");
 });
 
-test("token 2xx after logout is confirmed finding", () => {
+function capture(host: string, logoutStatus = 200) {
   const tok = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig";
-  const a = JSON.stringify({
+  return JSON.stringify({
     log: {
       entries: [
         {
           startedDateTime: "2026-08-29T05:00:00.000Z",
           request: {
             method: "POST",
-            url: "https://shop.lab/api/login",
+            url: `https://${host}/api/login`,
             headers: [],
             postData: { text: "{\"email\":\"a\"}" },
           },
@@ -51,7 +51,7 @@ test("token 2xx after logout is confirmed finding", () => {
           startedDateTime: "2026-08-29T05:00:01.000Z",
           request: {
             method: "GET",
-            url: "https://shop.lab/api/me",
+            url: `https://${host}/api/me`,
             headers: [{ name: "Authorization", value: `Bearer ${tok}` }],
           },
           response: { status: 200, headers: [], content: { text: "{\"id\":\"alice\"}" } },
@@ -60,16 +60,16 @@ test("token 2xx after logout is confirmed finding", () => {
           startedDateTime: "2026-08-29T05:00:02.000Z",
           request: {
             method: "POST",
-            url: "https://shop.lab/api/logout",
+            url: `https://${host}/api/logout`,
             headers: [{ name: "Authorization", value: `Bearer ${tok}` }],
           },
-          response: { status: 200, headers: [], content: { text: "{\"ok\":true}" } },
+          response: { status: logoutStatus, headers: [], content: { text: "{\"ok\":true}" } },
         },
         {
           startedDateTime: "2026-08-29T05:00:03.000Z",
           request: {
             method: "GET",
-            url: "https://shop.lab/api/me",
+            url: `https://${host}/api/me`,
             headers: [{ name: "Authorization", value: `Bearer ${tok}` }],
           },
           response: { status: 200, headers: [], content: { text: "{\"id\":\"alice\"}" } },
@@ -77,10 +77,26 @@ test("token 2xx after logout is confirmed finding", () => {
       ],
     },
   });
-  const ws = analyze(a, "", "alice", "bob");
+}
+
+test("lab token 2xx after 2xx logout is confirmed", () => {
+  const ws = analyze(capture("shop.lab"), "", "alice", "bob");
   assert.ok(ws.timeline.some((t) => t.kind === "logout"));
   assert.ok(tokensAliveAfterLogout(ws.requests).length >= 1);
   assert.ok(ws.findings.some((f) => /logout/i.test(f.title) && f.confidence === "confirmed"));
+});
+
+test("outside lab post-logout 2xx is suspicion only", () => {
+  const ws = analyze(capture("api.example.com"), "", "alice", "bob");
+  const f = ws.findings.find((x) => /logout/i.test(x.title));
+  assert.ok(f);
+  assert.equal(f?.confidence, "suspicion");
+});
+
+test("logout that did not 2xx is not confirmed", () => {
+  const ws = analyze(capture("shop.lab", 500), "", "alice", "bob");
+  const f = ws.findings.find((x) => /logout/i.test(x.title));
+  assert.ok(!f || f.confidence !== "confirmed");
 });
 
 test("demo capture flags bob token after logout", () => {

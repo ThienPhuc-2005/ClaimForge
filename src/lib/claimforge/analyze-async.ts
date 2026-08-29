@@ -6,6 +6,22 @@ let worker: Worker | null = null;
 let seq = 0;
 const pending = new Map<number, { resolve: (w: Workspace) => void; reject: (e: Error) => void }>();
 
+export function rejectAllAnalyzeWork(reason: string): void {
+  const err = new Error(reason);
+  const boxes = [...pending.values()];
+  pending.clear();
+  const w = worker;
+  worker = null;
+  if (w) {
+    try {
+      w.terminate();
+    } catch {
+      /* already dead */
+    }
+  }
+  for (const box of boxes) box.reject(err);
+}
+
 function getWorker(): Worker | null {
   if (typeof window === "undefined" || typeof Worker === "undefined") return null;
   if (worker) return worker;
@@ -19,9 +35,13 @@ function getWorker(): Worker | null {
       if (data.ok && data.workspace) box.resolve(data.workspace);
       else box.reject(new Error(data.error ?? "analyze worker failed"));
     };
-    worker.onerror = () => {
-      worker = null;
+    worker.onerror = (ev) => {
+      const msg = ev instanceof ErrorEvent ? ev.message : "analyze worker crashed";
+      rejectAllAnalyzeWork(msg || "analyze worker crashed");
     };
+    worker.addEventListener("messageerror", () => {
+      rejectAllAnalyzeWork("analyze worker message error");
+    });
     return worker;
   } catch {
     return null;
@@ -35,6 +55,15 @@ export function analyzeAsync(aRaw: string, bRaw: string, aLabel: string, bLabel:
   const id = (seq += 1);
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    w.postMessage({ id, aRaw, bRaw, aLabel, bLabel });
+    try {
+      w.postMessage({ id, aRaw, bRaw, aLabel, bLabel });
+    } catch (e) {
+      pending.delete(id);
+      reject(e instanceof Error ? e : new Error("analyze worker postMessage failed"));
+    }
   });
+}
+
+export function pendingAnalyzeCount(): number {
+  return pending.size;
 }

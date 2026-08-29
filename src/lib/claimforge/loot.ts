@@ -33,6 +33,19 @@ function jsonBody(text?: string): unknown {
   }
 }
 
+/** Fetch spec: ACAO * + credentials is invalid — browsers fail CORS, they do not expose the body. */
+export function corsCredentialedReadRisk(acao: string | undefined, cred: string | undefined, requestOrigin?: string) {
+  if (!acao) return { kind: "none" as const };
+  const star = acao.trim() === "*";
+  const credOn = Boolean(cred && /true/i.test(cred));
+  const origin = (requestOrigin ?? "").trim();
+  const reflected = Boolean(origin && acao.trim() === origin && !star);
+  if (star && credOn) return { kind: "invalid-star-credentials" as const };
+  if (reflected && credOn) return { kind: "reflected-credentials" as const };
+  if (star) return { kind: "star" as const };
+  return { kind: "none" as const };
+}
+
 export function harvestLoot(requests: CapturedRequest[]): LootItem[] {
   const out: LootItem[] = [];
   const seen = new Set<string>();
@@ -74,32 +87,32 @@ export function harvestLoot(requests: CapturedRequest[]): LootItem[] {
 
     const acao = headerValue(req.responseHeaders, "access-control-allow-origin");
     const cred = headerValue(req.responseHeaders, "access-control-allow-credentials");
+    const reqOrigin = headerValue(req.requestHeaders, "origin");
     const authed = Boolean(
       headerValue(req.requestHeaders, "authorization") || headerValue(req.requestHeaders, "cookie"),
     );
     if (req.method !== "OPTIONS" && acao) {
-      const star = acao.trim() === "*";
-      const credOn = Boolean(cred && /true/i.test(cred));
-      // * without credentials on a public GET is normal. Flag reflected/star+creds or * on authed JSON.
-      if (star && credOn) {
+      const risk = corsCredentialedReadRisk(acao, cred, reqOrigin);
+      if (risk.kind === "reflected-credentials") {
         add({
           kind: "cors",
           severity: "high",
           label: "CORS",
-          value: `* with credentials on ${req.origin || req.path}`,
+          value: `reflected Origin + credentials on ${req.origin || req.path}`,
           where: req.origin || where,
           actor: req.actor,
         });
-      } else if (star && authed && req.status >= 200 && req.status < 300) {
+      } else if (risk.kind === "star" && authed && req.status >= 200 && req.status < 300) {
         add({
           kind: "cors",
           severity: "medium",
           label: "CORS",
-          value: `* on authenticated ${req.method} ${req.template}`,
+          value: `* on authenticated ${req.method} ${req.template} (no credentials flag — not a credentialed-read bug)`,
           where: req.origin || where,
           actor: req.actor,
         });
       }
+      // invalid-star-credentials: browsers reject; do not report as credentialed-read.
     }
 
     const body = `${req.responseBody ?? ""}\n${req.requestBody ?? ""}`;

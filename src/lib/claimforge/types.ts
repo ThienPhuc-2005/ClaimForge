@@ -111,6 +111,8 @@ export interface Workspace {
   surface: SurfaceRow[];
   paths: AttackPath[];
   replays: ReplayItem[];
+  parseErrorA?: string;
+  parseErrorB?: string;
 }
 
 export interface LootItem {

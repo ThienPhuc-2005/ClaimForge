@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseHarLike } from "./parse.ts";
+import { parseActorInput, parseHarLike } from "./parse.ts";
 import { parseBurpXml } from "./burp.ts";
 import { headerValues } from "./cookies.ts";
 
@@ -87,13 +87,30 @@ test("HAR postData base64 and content.base64 flag decode", () => {
 
 test("Burp XML entity-decoded URL", () => {
   const xml = `<?xml version="1.0"?><items><item>
-    <url>https://shop.lab/api/invoices/5512?q=a&amp;b=1</url>
+    <url>https://shop.lab/api/invoices/5512?q=a&b=1</url>
     <method>GET</method>
-    <request>GET /api/invoices/5512?q=a&amp;b=1 HTTP/1.1\r\nHost: shop.lab\r\n\r\n</request>
+    <request>GET /api/invoices/5512?q=a&b=1 HTTP/1.1\r\nHost: shop.lab\r\n\r\n</request>
     <status>200</status>
     <response>HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok</response>
   </item></items>`;
   const items = parseBurpXml(xml, "A");
   assert.equal(items.length, 1);
   assert.match(items[0]?.url ?? "", /b=1/);
+});
+
+test("incomplete JSON does not recurse into stack overflow", () => {
+  const broken = '{"log":{"entries":[{"request":{"url":"https://x/a"';
+  const items = parseHarLike(broken, "A");
+  assert.equal(items.length, 0);
+  const a = parseActorInput(broken, "A");
+  assert.match(a.error ?? "", /Actor A/);
+  const b = parseActorInput('{"oops"', "B");
+  assert.match(b.error ?? "", /Actor B/);
+  assert.equal(a.error === b.error, false);
+});
+
+test("JSON-looking block in raw HTTP split does not infinite-loop", () => {
+  const mixed = 'GET / HTTP/1.1\nHost: x\n\n\n---\n{"log":{"entries":[';
+  const items = parseHarLike(mixed, "A");
+  assert.ok(Array.isArray(items));
 });

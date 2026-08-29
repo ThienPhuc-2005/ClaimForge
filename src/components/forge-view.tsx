@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CopyBtn } from "@/components/copy-btn";
-import { mintJwt, signHs256, inspectJwt, verifyJwtWithSecret } from "@/lib/claimforge/jwt.ts";
+import { mintJwt, signHs256, inspectJwt, verifyJwtWithKey } from "@/lib/claimforge/jwt.ts";
 import { useForge } from "@/lib/claimforge/store";
 
 export function ForgeView() {
@@ -11,6 +11,10 @@ export function ForgeView() {
   const [header, setHeader] = useState("{}");
   const [payload, setPayload] = useState("{}");
   const [secret, setSecret] = useState("");
+  const [publicPem, setPublicPem] = useState("");
+  const [jwksUrl, setJwksUrl] = useState("");
+  const [issuer, setIssuer] = useState("");
+  const [audience, setAudience] = useState("");
   const [signed, setSigned] = useState<string | null>(null);
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,6 +25,14 @@ export function ForgeView() {
     setPayload(JSON.stringify(seed.payload, null, 2));
     setSigned(null);
     setVerifyMsg(null);
+    setIssuer(typeof seed.payload.iss === "string" ? seed.payload.iss : "");
+    setAudience(
+      typeof seed.payload.aud === "string"
+        ? seed.payload.aud
+        : Array.isArray(seed.payload.aud)
+          ? String(seed.payload.aud[0] ?? "")
+          : "",
+    );
   }, [seed]);
 
   const minted = useMemo(() => {
@@ -66,8 +78,8 @@ export function ForgeView() {
 
   async function verifySeed() {
     if (!seed) return;
-    if (!secret) {
-      setVerifyMsg("Need an HMAC secret to verify.");
+    if (!secret && !publicPem && !jwksUrl) {
+      setVerifyMsg("Need an HMAC secret, RS256 public key (PEM), or JWKS URL.");
       return;
     }
     setBusy(true);
@@ -77,7 +89,13 @@ export function ForgeView() {
         setVerifyMsg("Could not parse seed.");
         return;
       }
-      const v = await verifyJwtWithSecret(ins, secret);
+      const v = await verifyJwtWithKey(ins, {
+        secret: secret || undefined,
+        publicKeyPem: publicPem || undefined,
+        jwksUrl: jwksUrl || undefined,
+        issuer: issuer || undefined,
+        audience: audience || undefined,
+      });
       setVerifyMsg(v.sigStatus === "verified" ? "Signature valid (jose)." : `Result: ${v.sigStatus}. ${v.issues.at(-1) ?? ""}`);
     } finally {
       setBusy(false);
@@ -93,7 +111,8 @@ export function ForgeView() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-muted">
-        Mutate claims locally. Sign with jose HS256 when you have a lab secret. Copy into a lab proxy — never spray from here.
+        Mutate claims locally. Verify HS* with a secret or RS256 with a PEM / JWKS. Bind iss and aud when you know them.
+        Copy into a lab proxy — never spray from here.
       </p>
       <label className="text-xs text-muted">
         Seed
@@ -160,6 +179,45 @@ export function ForgeView() {
           className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
         />
       </label>
+      <label className="text-xs text-muted">
+        RS256 public key (PEM)
+        <textarea
+          value={publicPem}
+          onChange={(e) => setPublicPem(e.target.value)}
+          spellCheck={false}
+          aria-label="RS256 public key PEM"
+          placeholder="-----BEGIN PUBLIC KEY-----"
+          className="mt-1 h-24 w-full rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
+        />
+      </label>
+      <label className="text-xs text-muted">
+        JWKS URL
+        <input
+          type="url"
+          value={jwksUrl}
+          onChange={(e) => setJwksUrl(e.target.value)}
+          placeholder="https://lab/.well-known/jwks.json"
+          className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
+        />
+      </label>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-xs text-muted">
+          Expected issuer (iss)
+          <input
+            value={issuer}
+            onChange={(e) => setIssuer(e.target.value)}
+            className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
+          />
+        </label>
+        <label className="text-xs text-muted">
+          Expected audience (aud)
+          <input
+            value={audience}
+            onChange={(e) => setAudience(e.target.value)}
+            className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
+          />
+        </label>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Preset onClick={() => void sign()}>{busy ? "Working…" : "Sign HS256"}</Preset>
         <Preset onClick={() => void verifySeed()}>Verify seed</Preset>

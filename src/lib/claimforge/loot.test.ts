@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { harvestLoot } from "./loot.ts";
+import { corsCredentialedReadRisk, harvestLoot } from "./loot.ts";
 import type { CapturedRequest } from "./types.ts";
 
 function req(partial: Partial<CapturedRequest>): CapturedRequest {
@@ -34,7 +34,11 @@ test("CORS * without credentials on public GET is not loot", () => {
   assert.equal(loot.filter((l) => l.kind === "cors").length, 0);
 });
 
-test("CORS * with credentials on authed JSON is loot", () => {
+test("CORS * with credentials is not a credentialed-read finding", () => {
+  assert.equal(
+    corsCredentialedReadRisk("*", "true")?.kind,
+    "invalid-star-credentials",
+  );
   const loot = harvestLoot([
     req({
       path: "/api/me",
@@ -46,7 +50,25 @@ test("CORS * with credentials on authed JSON is loot", () => {
       ],
     }),
   ]);
-  assert.ok(loot.some((l) => l.kind === "cors"));
+  assert.equal(loot.filter((l) => l.kind === "cors").length, 0);
+});
+
+test("reflected Origin + credentials is CORS loot", () => {
+  const loot = harvestLoot([
+    req({
+      path: "/api/me",
+      template: "/api/me",
+      requestHeaders: [
+        { name: "Origin", value: "https://evil.example" },
+        { name: "Authorization", value: "Bearer x.y.z" },
+      ],
+      responseHeaders: [
+        { name: "Access-Control-Allow-Origin", value: "https://evil.example" },
+        { name: "Access-Control-Allow-Credentials", value: "true" },
+      ],
+    }),
+  ]);
+  assert.ok(loot.some((l) => l.kind === "cors" && /reflected/i.test(l.value)));
 });
 
 test("login POST role field is not mass-assignment", () => {
