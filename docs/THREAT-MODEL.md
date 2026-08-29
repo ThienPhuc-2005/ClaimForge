@@ -40,5 +40,5 @@ Inspection is local. Signature status is `unsigned` / `unverified` / `verified` 
 
 ## Screenshots
 
-- `public/screenshots/desk.png` — findings desk
-- `public/screenshots/mobile.png` — mobile, results first, actors collapsed
+- `docs/screenshots/desk.png` — findings desk
+- `docs/screenshots/mobile.png` — mobile, results first, actors collapsed

@@ -9,7 +9,7 @@ Client-side red-team auth desk. Import two captures (HAR, Burp Save-items XML, r
 
 Analysis runs in the browser. A hosted shell may still load platform scripts, so this is **client-side processing**, not a fully air-gapped offline binary. Lab capture (alice vs bob) loads by default.
 
-![ClaimForge desk](public/screenshots/desk.png)
+![ClaimForge desk](docs/screenshots/desk.png)
 
 ## Run
 
