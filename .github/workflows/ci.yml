@@ -18,7 +18,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # ClaimForge product tests only. scripts/*.test.mjs are App Builder harness
+      # tests that need .grok/ (gitignored in this repo).
+      - run: npm run test:claimforge
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - name: preview + e2e desk flow
