@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CopyBtn } from "@/components/copy-btn";
 import { LAB_SECRET } from "@/lib/lab/constants";
 import { useForge } from "@/lib/claimforge/store";
@@ -20,6 +20,10 @@ interface HarEntry {
   };
 }
 
+type Bucket = { a: HarEntry[]; b: HarEntry[]; log: string[] };
+
+const emptyBucket = (): Bucket => ({ a: [], b: [], log: [] });
+
 function wrapHar(entries: HarEntry[]) {
   return JSON.stringify(
     { log: { version: "1.2", creator: { name: "ClaimForge victim lab", version: "1" }, entries } },
@@ -37,10 +41,33 @@ function headerList(h: Headers): { name: string; value: string }[] {
 export function LabView() {
   const { setActor, setTab } = useForge();
   const [mode, setMode] = useState<Mode>("vulnerable");
-  const [log, setLog] = useState<string[]>([]);
-  const [entriesA, setEntriesA] = useState<HarEntry[]>([]);
-  const [entriesB, setEntriesB] = useState<HarEntry[]>([]);
+  const [buckets, setBuckets] = useState<Record<Mode, Bucket>>({
+    vulnerable: emptyBucket(),
+    fixed: emptyBucket(),
+  });
   const [busy, setBusy] = useState(false);
+  const bucket = buckets[mode];
+
+  const mixedHint = useMemo(() => {
+    const other: Mode = mode === "vulnerable" ? "fixed" : "vulnerable";
+    const o = buckets[other];
+    if ((o.a.length || o.b.length) && (bucket.a.length || bucket.b.length)) {
+      return `Other mode (${other}) has ${o.a.length + o.b.length} calls kept separately — import uses ${mode} only.`;
+    }
+    return null;
+  }, [buckets, mode, bucket.a.length, bucket.b.length]);
+
+  function pushEntry(actor: "A" | "B", rec: HarEntry, line: string) {
+    setBuckets((prev) => {
+      const cur = prev[mode];
+      const next: Bucket = {
+        a: actor === "A" ? [...cur.a, rec] : cur.a,
+        b: actor === "B" ? [...cur.b, rec] : cur.b,
+        log: [line, ...cur.log].slice(0, 24),
+      };
+      return { ...prev, [mode]: next };
+    });
+  }
 
   async function call(path: string, init: RequestInit, actor: "A" | "B"): Promise<{ status: number; body: string }> {
     const url = `${window.location.origin}${path}`;
@@ -49,9 +76,8 @@ export function LabView() {
     const method = (init.method ?? "GET").toUpperCase();
     const res = await fetch(url, { ...init, method, headers });
     const body = await res.text();
-    const startedDateTime = new Date().toISOString();
     const rec: HarEntry = {
-      startedDateTime,
+      startedDateTime: new Date().toISOString(),
       request: {
         method,
         url,
@@ -64,9 +90,7 @@ export function LabView() {
         content: { text: body },
       },
     };
-    if (actor === "A") setEntriesA((e) => [...e, rec]);
-    else setEntriesB((e) => [...e, rec]);
-    setLog((l) => [`${actor} ${method} ${path} → ${res.status}`, ...l].slice(0, 24));
+    pushEntry(actor, rec, `${mode} ${actor} ${method} ${path} → ${res.status}`);
     return { status: res.status, body };
   }
 
@@ -133,16 +157,22 @@ export function LabView() {
   }
 
   function loadIntoDesk() {
-    if (entriesA.length) setActor("a", wrapHar(entriesA), true);
-    if (entriesB.length) setActor("b", wrapHar(entriesB), true);
+    const a = buckets[mode].a;
+    const b = buckets[mode].b;
+    if (a.length) setActor("a", wrapHar(a), true);
+    if (b.length) setActor("b", wrapHar(b), true);
     setTab("findings");
+  }
+
+  function clearMode() {
+    setBuckets((prev) => ({ ...prev, [mode]: emptyBucket() }));
   }
 
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm leading-relaxed text-muted">
-        Local victim API. Same routes, two implementations. Traffic stays in this browser until you import it into
-        A/B.
+        Local victim API. Same routes, two implementations. Vulnerable and Fixed traffic are stored separately so
+        mixed-mode captures cannot pollute findings.
       </p>
       <fieldset className="flex flex-col gap-2">
         <legend className="text-xs font-medium uppercase tracking-wide text-muted">Implementation</legend>
@@ -157,6 +187,9 @@ export function LabView() {
                 className="size-4 accent-accent"
               />
               {m === "vulnerable" ? "Vulnerable" : "Fixed"}
+              <span className="text-xs text-subtle">
+                ({buckets[m].a.length + buckets[m].b.length} calls)
+              </span>
             </label>
           ))}
         </div>
@@ -165,6 +198,7 @@ export function LabView() {
             ? "No object ACL, alg=none accepted, logout does not revoke the bearer."
             : "Owner check on invoices, HS256 only, logout denylists the token."}
         </p>
+        {mixedHint && <p className="text-xs text-warn">{mixedHint}</p>}
       </fieldset>
       <div className="flex flex-wrap gap-2" aria-busy={busy}>
         <LabBtn onClick={() => void runBola()} disabled={busy}>
@@ -176,8 +210,11 @@ export function LabView() {
         <LabBtn onClick={() => void runLogout()} disabled={busy}>
           Run logout lab
         </LabBtn>
-        <LabBtn onClick={loadIntoDesk} disabled={!entriesA.length && !entriesB.length}>
-          Import traffic into A/B
+        <LabBtn onClick={loadIntoDesk} disabled={!bucket.a.length && !bucket.b.length}>
+          Import {mode} into A/B
+        </LabBtn>
+        <LabBtn onClick={clearMode} disabled={!bucket.a.length && !bucket.b.length}>
+          Clear {mode} bucket
         </LabBtn>
       </div>
       <p className="text-xs text-muted">
@@ -193,7 +230,7 @@ export function LabView() {
         className="max-h-48 overflow-auto rounded-md border border-border bg-bg p-2 font-mono text-xs"
         aria-live="polite"
       >
-        {log.join("\n") || "No lab calls yet."}
+        {bucket.log.join("\n") || `No ${mode} lab calls yet.`}
       </pre>
     </div>
   );
@@ -204,7 +241,7 @@ function LabBtn({
   onClick,
   disabled,
 }: {
-  children: string;
+  children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
 }) {

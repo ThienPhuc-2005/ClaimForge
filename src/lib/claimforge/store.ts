@@ -1,10 +1,21 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { analyze } from "./analyze.ts";
-import { analyzeAsync } from "./analyze-async.ts";
+import { analyzeAsync, cancelAnalyzeJobs } from "./analyze-async.ts";
 import { ANALYZE_DEBOUNCE_MS, MAX_CAPTURE_BYTES } from "./limits.ts";
 import { DEMO_A_LABEL, DEMO_B_LABEL, demoActorA, demoActorB } from "./demo.ts";
 import type { Workspace } from "./types.ts";
+
+export type DeskTab =
+  | "findings"
+  | "playbook"
+  | "forge"
+  | "diff"
+  | "graph"
+  | "loot"
+  | "timeline"
+  | "traffic"
+  | "lab";
 
 interface ForgeState {
   aLabel: string;
@@ -16,7 +27,7 @@ interface ForgeState {
   importError: string | null;
   parseErrorA: string | null;
   parseErrorB: string | null;
-  tab: "findings" | "playbook" | "forge" | "diff" | "graph" | "loot" | "timeline" | "traffic" | "lab";
+  tab: DeskTab;
   workspace: Workspace;
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
   setLabel: (side: "a" | "b", label: string) => void;
@@ -41,6 +52,22 @@ function parseFields(ws: Workspace) {
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let runGen = 0;
 
+function runAnalyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string, set: (p: Partial<ForgeState>) => void) {
+  const gen = (runGen += 1);
+  set({ analyzing: true, importError: null });
+  void analyzeAsync(aRaw, bRaw, aLabel, bLabel)
+    .then((workspace) => {
+      if (gen !== runGen) return;
+      set({ workspace, analyzing: false, ...parseFields(workspace) });
+    })
+    .catch((e) => {
+      if (gen !== runGen) return;
+      const msg = e instanceof Error ? e.message : "analyze failed";
+      if (/superseded|cancelled/i.test(msg)) return;
+      set({ analyzing: false, importError: msg });
+    });
+}
+
 export const useForge = create<ForgeState>()(
   persist(
     (set, get) => ({
@@ -63,19 +90,7 @@ export const useForge = create<ForgeState>()(
         const aRaw = side === "a" ? raw : get().aRaw;
         const bRaw = side === "b" ? raw : get().bRaw;
         set({ aRaw, bRaw, importError: null });
-        const kick = () => {
-          const gen = (runGen += 1);
-          set({ analyzing: true });
-          void analyzeAsync(aRaw, bRaw, get().aLabel, get().bLabel)
-            .then((workspace) => {
-              if (gen !== runGen) return;
-              set({ workspace, analyzing: false, ...parseFields(workspace) });
-            })
-            .catch((e) => {
-              if (gen !== runGen) return;
-              set({ analyzing: false, importError: e instanceof Error ? e.message : "analyze failed" });
-            });
-        };
+        const kick = () => runAnalyze(aRaw, bRaw, get().aLabel, get().bLabel, set);
         if (immediate) {
           if (debounceTimer) clearTimeout(debounceTimer);
           kick();
@@ -87,8 +102,8 @@ export const useForge = create<ForgeState>()(
       setLabel: (side, label) => {
         const aLabel = side === "a" ? label : get().aLabel;
         const bLabel = side === "b" ? label : get().bLabel;
-        const workspace = analyze(get().aRaw, get().bRaw, aLabel, bLabel);
-        set({ aLabel, bLabel, workspace, ...parseFields(workspace) });
+        set({ aLabel, bLabel });
+        runAnalyze(get().aRaw, get().bRaw, aLabel, bLabel, set);
       },
       setTab: (tab) => set({ tab }),
       setPersistCaptures: (persistCaptures) => set({ persistCaptures }),
@@ -96,7 +111,6 @@ export const useForge = create<ForgeState>()(
       loadDemo: () => {
         const aRaw = demoActorA();
         const bRaw = demoActorB();
-        const workspace = analyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL);
         set({
           aLabel: DEMO_A_LABEL,
           bLabel: DEMO_B_LABEL,
@@ -104,17 +118,19 @@ export const useForge = create<ForgeState>()(
           bRaw,
           tab: "findings",
           importError: null,
-          workspace,
-          ...parseFields(workspace),
         });
+        runAnalyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL, set);
       },
       clearAll: () => {
+        cancelAnalyzeJobs("cleared");
+        runGen += 1;
         set({
           aRaw: "",
           bRaw: "",
           importError: null,
           parseErrorA: null,
           parseErrorB: null,
+          analyzing: false,
           workspace: emptyWs(get().aLabel, get().bLabel),
         });
       },
@@ -142,14 +158,18 @@ export const useForge = create<ForgeState>()(
           }
         }
         if (!state) return;
-        if ((state.tab as string) === "artifacts") state.tab = "loot";
-        if (!state.persistCaptures) {
+        if ((state.tab as string) === "artifacts") state.tab = "findings";
+        const busy = state.analyzing || state.workspace.requests.length > 0;
+        if (!state.persistCaptures && !busy) {
           state.aRaw = "";
           state.bRaw = "";
         }
-        state.workspace = analyze(state.aRaw, state.bRaw, state.aLabel, state.bLabel);
-        state.parseErrorA = state.workspace.parseErrorA ?? null;
-        state.parseErrorB = state.workspace.parseErrorB ?? null;
+        if (!busy) state.workspace = emptyWs(state.aLabel, state.bLabel);
+        if ((state.aRaw || state.bRaw) && !state.analyzing) {
+          queueMicrotask(() => {
+            runAnalyze(state.aRaw, state.bRaw, state.aLabel, state.bLabel, (p) => useForge.setState(p));
+          });
+        }
       },
     },
   ),

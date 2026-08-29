@@ -1,5 +1,6 @@
 import type { CapturedRequest } from "./types.ts";
 import { pathIds } from "./ids.ts";
+import { MAX_SAME_OBJECT_PAIRS } from "./limits.ts";
 
 export type AuthzClass = "observation" | "suspicion" | "confirmed";
 
@@ -50,17 +51,24 @@ export function strongestClass(list: AuthzClass[]): AuthzClass | null {
   return null;
 }
 
-/** Pair A/B 2xx hits that share a path object id. */
+/** Pair A/B 2xx hits that share a path. Indexed by path — O(A+B), not O(A×B). */
 export function sameObjectHits(a: CapturedRequest[], b: CapturedRequest[]): CapturedRequest[][] {
+  const bByPath = new Map<string, CapturedRequest[]>();
+  for (const br of b) {
+    if (br.status < 200 || br.status >= 300) continue;
+    const list = bByPath.get(br.path);
+    if (list) list.push(br);
+    else bByPath.set(br.path, [br]);
+  }
   const pairs: CapturedRequest[][] = [];
   for (const ar of a) {
     if (ar.status < 200 || ar.status >= 300) continue;
-    const ids = pathIds(ar.path);
-    if (!ids.length) continue;
-    for (const br of b) {
-      if (br.status < 200 || br.status >= 300) continue;
-      if (br.path !== ar.path) continue;
+    if (!pathIds(ar.path).length) continue;
+    const bs = bByPath.get(ar.path);
+    if (!bs) continue;
+    for (const br of bs) {
       pairs.push([ar, br]);
+      if (pairs.length >= MAX_SAME_OBJECT_PAIRS) return pairs;
     }
   }
   return pairs;

@@ -79,36 +79,61 @@ function walkOwners(value: unknown, into: OwnerLink[], depth: number) {
     const rec = value as Record<string, unknown>;
     const owner = rec.ownerId ?? rec.owner_id ?? rec.userId ?? rec.user_id ?? rec.accountId;
     const id = rec.id ?? rec.invoiceId ?? rec.orderId;
-    if (owner != null && id != null) into.push({ owner: String(owner), object: String(id) });
+    if (owner != null && id != null && String(owner) !== String(id)) {
+      into.push({ owner: String(owner), object: String(id) });
+    }
     for (const v of Object.values(rec)) walkOwners(v, into, depth + 1);
   }
 }
 
+function actorSubs(jwts: JwtToken[], actor: ActorId): Set<string> {
+  const subs = new Set<string>();
+  for (const j of jwts.filter((x) => x.actor === actor)) {
+    const sub = jwtSubject(j);
+    if (sub) subs.add(sub);
+  }
+  return subs;
+}
+
+function allSubs(jwts: JwtToken[]): Set<string> {
+  const s = new Set<string>();
+  for (const j of jwts) {
+    const sub = jwtSubject(j);
+    if (sub) s.add(sub);
+  }
+  return s;
+}
+
+/**
+ * Object ids this actor owns. JWT `sub` is an identity, never an object id —
+ * unverified tokens must not mark /resource/{sub} as owned, and a numeric sub
+ * colliding with an invoice id is not ownership proof.
+ * Proof is ownerId/userId in a body (owner ≠ object), or this actor's inventory
+ * list when those ids are not themselves JWT subjects.
+ */
 export function ownedObjects(
   requests: CapturedRequest[],
   jwts: JwtToken[],
   actor: ActorId,
 ): Set<string> {
   const owned = new Set<string>();
-  const subs = new Set<string>();
-  for (const j of jwts.filter((x) => x.actor === actor)) {
-    const sub = jwtSubject(j);
-    if (sub) {
-      subs.add(sub);
-      owned.add(sub);
-    }
-  }
-  // Ownership from ownerId/userId across the whole capture, but only if it matches this actor's sub.
+  const subs = actorSubs(jwts, actor);
+  const subsAll = allSubs(jwts);
   for (const req of requests) {
     for (const rel of [...ownerLinks(req.responseBody), ...ownerLinks(req.requestBody)]) {
-      if (subs.has(rel.owner)) owned.add(rel.object);
+      if (subs.has(rel.owner) && !subsAll.has(rel.object)) owned.add(rel.object);
     }
   }
   for (const req of requests.filter((r) => r.actor === actor)) {
     try {
       const body = req.responseBody ? (JSON.parse(req.responseBody) as Record<string, unknown>) : null;
       const inv = body?.invoices;
-      if (Array.isArray(inv)) for (const v of inv) owned.add(String(v));
+      if (Array.isArray(inv)) {
+        for (const v of inv) {
+          const id = String(v);
+          if (!subsAll.has(id)) owned.add(id);
+        }
+      }
     } catch {
       /* ignore */
     }

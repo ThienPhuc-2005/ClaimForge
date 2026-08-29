@@ -10,12 +10,27 @@ import type {
 import { headerValue, headerValues, parseCookieHeader, parseSetCookie } from "./cookies.ts";
 import { extractJwtStrings, inspectJwt, jwtSubject } from "./jwt.ts";
 import { parseActorInput, resetParseIds } from "./parse.ts";
+import { MAX_BODY_CHARS, MAX_REQUESTS_PER_ACTOR } from "./limits.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
 import { buildPaths, buildReplays } from "./playbook.ts";
 import { classifySameObject, looksPublicOrShared, sameObjectHits, strongestClass } from "./bola.ts";
 import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
+
+function trimBody(s?: string): string | undefined {
+  if (s == null || s.length <= MAX_BODY_CHARS) return s;
+  return s.slice(0, MAX_BODY_CHARS);
+}
+
+function slimActor(reqs: CapturedRequest[]): CapturedRequest[] {
+  const cut = reqs.length > MAX_REQUESTS_PER_ACTOR ? reqs.slice(0, MAX_REQUESTS_PER_ACTOR) : reqs;
+  return cut.map((r) => ({
+    ...r,
+    requestBody: trimBody(r.requestBody),
+    responseBody: trimBody(r.responseBody),
+  }));
+}
 
 function collectArtifacts(requests: CapturedRequest[]) {
   const jwts: JwtToken[] = [];
@@ -117,10 +132,10 @@ function diffRows(
       const top = strongestClass(classes);
       if (top === "confirmed") {
         verdict = "bola";
-        note = "Confirmed BOLA: ownership evidence + B 2xx on A's object";
+        note = "Heuristic BOLA: body ownership (ownerId/inventory) + B 2xx on A's object — confirm in a lab proxy";
       } else if (top === "observation") {
         verdict = "shared";
-        note = "Observation: both 2xx on a public/shared resource — not BOLA";
+        note = "Both 2xx on a public/shared-looking resource — usually not IDOR; still check object ACL";
       } else if (top === "suspicion") {
         verdict = "suspect";
         note = "Suspicion: both 2xx on the same id, no ownership proof";
@@ -137,7 +152,7 @@ function diffRows(
         }
       } else if (aOk && bDenied) {
         verdict = "denied";
-        note = "A allowed, B denied — looks enforced";
+        note = "A allowed, B denied — this capture looks enforced; not a proof of the whole API";
       } else if (aOk && !bOk) {
         verdict = "mixed";
         note = "A 2xx, B not 2xx";
@@ -173,7 +188,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         title: `JWT · actor ${jwt.actor}: ${issue.split("—")[0]}`,
         why: issue,
         evidence: [`alg=${jwt.alg ?? "?"}`, `src=${jwt.source}`, `sub=${jwtSubject(jwt) ?? "?"}`],
-        how: "Confirm the API rejects alg=none, embedded jwk, and unsigned tokens. Verify RS256 against a JWKS/public key and bind iss/aud. Do not send forged tokens at live hosts from this app — export and replay in your proxy against a lab.",
+        how: "This is a capture heuristic (alg=none / embedded jwk / unsigned). Confirm the API rejects those in a lab proxy. Do not send forged tokens at live hosts from this app.",
       });
     }
   }
@@ -214,10 +229,10 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         severity: "critical",
         confidence: "confirmed",
         title: `BOLA / IDOR · B read A's object ${stolen.join(",")}`,
-        why: "Ownership evidence (JWT sub / ownerId) ties the object to A, and B still received 2xx.",
+        why: "Body ownership (ownerId / inventory), not an unverified JWT sub, ties the object to A, and B still received 2xx. Reproduce on a lab proxy before filing.",
         evidence: [`${req.method} ${req.path} → ${req.status}`, `A owns: ${stolen.join(", ")}`],
         template: req.template,
-        how: "Authorize on object owner, not on 'is authenticated'. Compare the same request as A vs B in your interceptor.",
+        how: "Heuristic. Authorize on object owner, not on 'is authenticated'. Compare the same request as A vs B in your interceptor.",
       });
     }
   }
@@ -236,7 +251,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
           row.bSample?.path ?? "",
         ],
         template: row.template,
-        how: "Bind the object to session.sub before returning 200. Replay B's token on A's object in a lab proxy.",
+        how: "Heuristic. Bind the object to session.sub before returning 200. Replay B's token on A's object in a lab proxy, then file.",
       });
     } else if (row.verdict === "suspect") {
       add({
@@ -260,7 +275,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         why: row.note,
         evidence: [row.aSample?.path ?? "", row.bSample?.path ?? ""],
         template: row.template,
-        how: "Both roles 2xx on a catalog/public/shared object is expected. Do not file as IDOR.",
+        how: "Both roles 2xx on a catalog/public/shared object is often expected. Do not file as IDOR from this row alone.",
       });
     }
   }
@@ -352,8 +367,8 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   resetParseIds();
   const aParsed = parseActorInput(aRaw, "A");
   const bParsed = parseActorInput(bRaw, "B");
-  const aReq = aParsed.requests;
-  const bReq = bParsed.requests;
+  const aReq = slimActor(aParsed.requests);
+  const bReq = slimActor(bParsed.requests);
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests);

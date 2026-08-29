@@ -15,17 +15,19 @@ import { PlaybookView } from "@/components/playbook-view";
 import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
-import { engagementMarkdown } from "@/lib/claimforge/report.ts";
-import { redactWorkspace } from "@/lib/claimforge/redact.ts";
+import { engagementMarkdown, exportReportJson } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import type { Finding, Severity } from "@/lib/claimforge/types";
 
 export const Route = createFileRoute("/")({ component: Home });
 
-const TABS = [
-  { id: "findings", label: "Findings" },
-  { id: "playbook", label: "Playbook" },
-  { id: "forge", label: "Forge" },
+const PRIMARY_TABS = [
+  { id: "findings", label: "1 · Findings" },
+  { id: "playbook", label: "2 · Playbook" },
+  { id: "forge", label: "3 · Forge" },
+] as const;
+
+const MORE_TABS = [
   { id: "diff", label: "AuthZ diff" },
   { id: "graph", label: "ID graph" },
   { id: "loot", label: "Loot" },
@@ -33,6 +35,8 @@ const TABS = [
   { id: "traffic", label: "Traffic" },
   { id: "lab", label: "Victim lab" },
 ] as const;
+
+const TABS = [...PRIMARY_TABS, ...MORE_TABS] as const;
 
 function Home() {
   const {
@@ -58,44 +62,7 @@ function Home() {
   const high = workspace.findings.filter((f) => f.severity === "high").length;
 
   function exportReport() {
-    const safe = redactWorkspace(workspace);
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            generated: new Date().toISOString(),
-            tool: "ClaimForge",
-            secrets: "redacted",
-            actors: { A: aLabel, B: bLabel },
-            findings: safe.findings,
-            diffs: safe.diffs,
-            timeline: safe.timeline,
-            jwts: safe.jwts.map((j) => ({
-              actor: j.actor,
-              alg: j.alg,
-              parts: j.parts,
-              sigStatus: j.sigStatus,
-              issues: j.issues,
-              payload: j.payload,
-            })),
-            cookies: safe.cookies.map((c) => ({
-              actor: c.actor,
-              name: c.name,
-              flags: c.flags,
-              issues: c.issues,
-              source: c.source,
-            })),
-            graph: safe.graph,
-            loot: safe.loot,
-            paths: safe.paths,
-            replays: safe.replays,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
-    );
+    const blob = new Blob([JSON.stringify(exportReportJson(workspace), null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -198,7 +165,7 @@ function Home() {
             aria-label="Analysis views"
             onKeyDown={onTabKey}
           >
-            {TABS.map((t) => (
+            {PRIMARY_TABS.map((t) => (
               <button
                 key={t.id}
                 id={`tab-${t.id}`}
@@ -216,6 +183,25 @@ function Home() {
                 {t.label}
               </button>
             ))}
+            <label className="ml-auto shrink-0 text-xs text-muted">
+              More
+              <select
+                className="ml-2 h-11 rounded-md border border-border bg-elevated px-2 text-sm text-fg"
+                aria-label="More analysis views"
+                value={MORE_TABS.some((t) => t.id === tab) ? tab : ""}
+                onChange={(e) => {
+                  const id = e.target.value as (typeof MORE_TABS)[number]["id"];
+                  if (id) setTab(id);
+                }}
+              >
+                <option value="">Inspect…</option>
+                {MORE_TABS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
             {!workspace.requests.length && tab !== "lab" ? <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} /> : null}
@@ -264,17 +250,11 @@ function Home() {
 function Onboarding({ onDemo, onLab }: { onDemo: () => void; onLab: () => void }) {
   return (
     <div className="flex flex-col gap-3 p-4 md:p-6">
-      <h2 className="text-base font-semibold">Start an engagement</h2>
+      <h2 className="text-base font-semibold">Workflow</h2>
       <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-muted">
-        <li>Paste two captures (HAR / Burp XML) — one session per actor — or open Victim lab (Vulnerable vs Fixed).</li>
-        <li>
-          Findings split Observation / Suspicion / Confirmed. Critical BOLA needs ownership proof. Captures stay in
-          memory unless you opt in.
-        </li>
-        <li>
-          Copy a replay curl into your interceptor. This desk never fires it. Exports redact JWT, cookies, and
-          bearers.
-        </li>
+        <li>Capture — paste two HARs (or Victim lab, one implementation at a time).</li>
+        <li>Findings — Observation / Suspicion / Confirmed. Confirmed BOLA needs ownerId or inventory, not an unverified JWT sub.</li>
+        <li>Playbook — copy curl into your interceptor. This desk never fires it. Exports redact tokens, cookies, and passwords.</li>
       </ol>
       <div className="flex flex-wrap gap-2">
         <button

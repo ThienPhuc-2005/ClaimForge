@@ -50,6 +50,7 @@ export function ForgeView() {
       const h = JSON.parse(header) as Record<string, unknown>;
       const p = JSON.parse(payload) as Record<string, unknown>;
       mut(h, p);
+      setSigned(null);
       setHeader(JSON.stringify(h, null, 2));
       setPayload(JSON.stringify(p, null, 2));
     } catch {
@@ -106,7 +107,7 @@ export function ForgeView() {
     return <p className="p-6 text-sm text-muted">No JWTs in the capture to forge from.</p>;
   }
 
-  const out = signed || minted.token;
+  const out = signed && !minted.err ? signed : minted.token;
 
   return (
     <div className="flex flex-col gap-3">
@@ -228,7 +229,10 @@ export function ForgeView() {
           Header
           <textarea
             value={header}
-            onChange={(e) => setHeader(e.target.value)}
+            onChange={(e) => {
+              setSigned(null);
+              setHeader(e.target.value);
+            }}
             spellCheck={false}
             className="mt-1 h-36 w-full rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
           />
@@ -237,7 +241,10 @@ export function ForgeView() {
           Payload
           <textarea
             value={payload}
-            onChange={(e) => setPayload(e.target.value)}
+            onChange={(e) => {
+              setSigned(null);
+              setPayload(e.target.value);
+            }}
             spellCheck={false}
             className="mt-1 h-36 w-full rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
           />

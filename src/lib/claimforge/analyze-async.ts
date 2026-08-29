@@ -4,6 +4,7 @@ import type { Workspace } from "./types.ts";
 
 let worker: Worker | null = null;
 let seq = 0;
+let yieldGen = 0;
 const pending = new Map<number, { resolve: (w: Workspace) => void; reject: (e: Error) => void }>();
 
 export function rejectAllAnalyzeWork(reason: string): void {
@@ -20,6 +21,12 @@ export function rejectAllAnalyzeWork(reason: string): void {
     }
   }
   for (const box of boxes) box.reject(err);
+}
+
+/** Drop in-flight jobs so a newer paste does not wait on stale analyze. */
+export function cancelAnalyzeJobs(reason = "analyze cancelled"): void {
+  yieldGen += 1;
+  rejectAllAnalyzeWork(reason);
 }
 
 function getWorker(): Worker | null {
@@ -48,10 +55,28 @@ function getWorker(): Worker | null {
   }
 }
 
+function analyzeYield(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Promise<Workspace> {
+  const g = ++yieldGen;
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      if (g !== yieldGen) {
+        reject(new Error("analyze cancelled"));
+        return;
+      }
+      try {
+        resolve(analyze(aRaw, bRaw, aLabel, bLabel));
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    }, 0);
+  });
+}
+
 export function analyzeAsync(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Promise<Workspace> {
+  cancelAnalyzeJobs("analyze superseded");
   const size = aRaw.length + bRaw.length;
   const w = size >= WORKER_ANALYZE_BYTES ? getWorker() : null;
-  if (!w) return Promise.resolve(analyze(aRaw, bRaw, aLabel, bLabel));
+  if (!w) return analyzeYield(aRaw, bRaw, aLabel, bLabel);
   const id = (seq += 1);
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });

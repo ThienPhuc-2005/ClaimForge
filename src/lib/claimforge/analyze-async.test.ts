@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pendingAnalyzeCount, rejectAllAnalyzeWork } from "./analyze-async.ts";
+import { analyzeAsync, cancelAnalyzeJobs, pendingAnalyzeCount, rejectAllAnalyzeWork } from "./analyze-async.ts";
 import { WORKER_ANALYZE_BYTES } from "./limits.ts";
 
 test("worker crash rejects every pending analyze promise", async () => {
@@ -29,4 +29,19 @@ test("worker crash rejects every pending analyze promise", async () => {
   rejectAllAnalyzeWork("idle");
   assert.equal(pendingAnalyzeCount(), 0);
   assert.ok(WORKER_ANALYZE_BYTES > 0);
+});
+
+test("newer analyzeAsync cancels the previous yield job", async () => {
+  const p1 = analyzeAsync("stale-capture", "", "alice", "bob");
+  const p2 = analyzeAsync("", "", "alice", "bob");
+  await assert.rejects(p1, /cancelled|superseded/);
+  const ws = await p2;
+  assert.equal(ws.requests.length, 0);
+  assert.equal(pendingAnalyzeCount(), 0);
+});
+
+test("cancelAnalyzeJobs rejects in-flight yield", async () => {
+  const p = analyzeAsync("{", "", "a", "b");
+  cancelAnalyzeJobs("cleared");
+  await assert.rejects(p, /cancelled|superseded/);
 });

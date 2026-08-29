@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: preview + e2e desk flow
+        run: |
+          node scripts/with-app-env.mjs vite preview --host 127.0.0.1 --port 8080 &
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:8080/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8080/ >/dev/null
+          E2E_URL=http://127.0.0.1:8080 node scripts/e2e-desk.mjs

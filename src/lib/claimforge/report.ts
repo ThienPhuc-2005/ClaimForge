@@ -1,6 +1,38 @@
 import type { Workspace } from "./types.ts";
 import { redactText, redactWorkspace } from "./redact.ts";
 
+export function exportReportJson(ws: Workspace) {
+  const safe = redactWorkspace(ws);
+  return {
+    generated: new Date().toISOString(),
+    tool: "ClaimForge",
+    secrets: "redacted",
+    actors: { A: safe.aLabel, B: safe.bLabel },
+    findings: safe.findings,
+    diffs: safe.diffs,
+    timeline: safe.timeline,
+    jwts: safe.jwts.map((j) => ({
+      actor: j.actor,
+      alg: j.alg,
+      parts: j.parts,
+      sigStatus: j.sigStatus,
+      issues: j.issues,
+      payload: j.payload,
+    })),
+    cookies: safe.cookies.map((c) => ({
+      actor: c.actor,
+      name: c.name,
+      flags: c.flags,
+      issues: c.issues,
+      source: c.source,
+    })),
+    graph: safe.graph,
+    loot: safe.loot,
+    paths: safe.paths,
+    replays: safe.replays,
+  };
+}
+
 export function engagementMarkdown(ws: Workspace): string {
   const safe = redactWorkspace(ws);
   const lines: string[] = [
@@ -12,6 +44,7 @@ export function engagementMarkdown(ws: Workspace): string {
     `- Generated: ${new Date().toISOString()}`,
     `- Secrets: redacted. Raw HAR/JWT/cookies are not attached.`,
     `- Scope: analysis only — replay curls are for an authorized lab / interceptor, not this app.`,
+    `- Confidence is a capture heuristic. Confirmed is not a ship-it verdict.`,
     ``,
     `## Kill chain`,
     ``,

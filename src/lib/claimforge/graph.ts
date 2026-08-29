@@ -88,7 +88,7 @@ export function buildIdGraph(
 
     for (const pid of pathIds(req.path)) {
       const obj = upsert("object", pid, { seenBy: [req.actor] });
-      const foreign = obj.owners.length > 0 && !obj.owners.includes(req.actor);
+      const foreign = obj.owners.length > 0 && !obj.owners.includes(req.actor) && sub !== pid;
       const bola = Boolean(foreign && ok);
       if (bola) obj.bola = true;
       const from = sub ? nodeKey("subject", sub) : actorNode;
@@ -108,6 +108,8 @@ export function buildIdGraph(
     if (e.kind !== "access") continue;
     const obj = nodes.get(e.to);
     if (!obj || !e.actor) continue;
+    const sub = subjectOf[e.actor];
+    if (sub && sub === obj.label) continue;
     if (obj.owners.length && !obj.owners.includes(e.actor) && e.status && e.status >= 200 && e.status < 300) {
       e.bola = true;
       obj.bola = true;

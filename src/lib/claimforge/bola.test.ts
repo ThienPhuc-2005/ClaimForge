@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { analyze } from "./analyze.ts";
-import { classifySameObject, looksPublicOrShared } from "./bola.ts";
+import { classifySameObject, looksPublicOrShared, sameObjectHits } from "./bola.ts";
 import { demoActorA, demoActorB } from "./demo.ts";
+import { ownedObjects } from "./ids.ts";
+import { MAX_SAME_OBJECT_PAIRS } from "./limits.ts";
+import type { CapturedRequest } from "./types.ts";
 
 function har(entries: object[]) {
   return JSON.stringify({ log: { version: "1.2", entries } });
@@ -109,10 +112,66 @@ test("lab demo still confirms BOLA on invoice 5512", () => {
   assert.ok(ws.paths.some((p) => p.id === "path-horizontal"));
 });
 
+test("unverified JWT sub is not treated as an owned object id", () => {
+  const a = har([
+    getEntry("2026-08-29T05:00:00.000Z", "https://shop.lab/api/invoices/5512", 200, "5512", { id: 5512, name: "x" }, "HS256"),
+  ]);
+  const b = har([
+    getEntry("2026-08-29T05:00:01.000Z", "https://shop.lab/api/invoices/5512", 200, "bob", { id: 5512, name: "x" }, "HS256"),
+  ]);
+  const ws = analyze(a, b, "alice", "bob");
+  assert.ok(!ownedObjects(ws.requests, ws.jwts, "A").has("5512"));
+  assert.notEqual(ws.diffs.find((d) => d.template.includes("/invoices"))?.verdict, "bola");
+  assert.ok(!ws.findings.some((f) => f.confidence === "confirmed" && /BOLA/i.test(f.title)));
+});
+
+test("JWT sub colliding with object id does not confirm BOLA", () => {
+  const a = har([
+    getEntry("2026-08-29T05:10:00.000Z", "https://shop.lab/api/users/5512", 200, "5512", { id: 5512 }),
+    getEntry("2026-08-29T05:10:01.000Z", "https://shop.lab/api/me", 200, "5512", { id: "5512", invoices: [5512] }),
+  ]);
+  const b = har([getEntry("2026-08-29T05:10:02.000Z", "https://shop.lab/api/users/5512", 200, "bob", { id: 5512 })]);
+  const ws = analyze(a, b, "alice", "bob");
+  assert.ok(!ownedObjects(ws.requests, ws.jwts, "A").has("5512"));
+  assert.ok(!ws.findings.some((f) => f.confidence === "confirmed" && /BOLA/i.test(f.title)));
+});
+
 test("classifySameObject units", () => {
   const a = new Set(["5512"]);
   const b = new Set(["8801"]);
   assert.equal(classifySameObject("9", "/api/catalog/9", [], a, b), "observation");
   assert.equal(classifySameObject("5512", "/api/invoices/5512", [JSON.stringify({ ownerId: "alice" })], a, b), "confirmed");
   assert.equal(classifySameObject("77", "/api/items/77", [JSON.stringify({ id: 77 })], a, b), "suspicion");
+});
+
+function stubReq(actor: "A" | "B", i: number, path: string): CapturedRequest {
+  return {
+    id: `${actor}${i}`,
+    actor,
+    startedAt: i,
+    method: "GET",
+    url: `https://shop.lab${path}`,
+    origin: "https://shop.lab",
+    path,
+    template: "/api/invoices/{id}",
+    query: {},
+    requestHeaders: [],
+    status: 200,
+    statusText: "OK",
+    responseHeaders: [],
+    timeMs: 0,
+  };
+}
+
+test("sameObjectHits is path-indexed, capped, and not O(A×B) RAM", () => {
+  const a = Array.from({ length: 2000 }, (_, i) => stubReq("A", i, "/api/invoices/1"));
+  const b = Array.from({ length: 2000 }, (_, i) => stubReq("B", i, "/api/invoices/1"));
+  const before = process.memoryUsage().heapUsed;
+  const t0 = performance.now();
+  const pairs = sameObjectHits(a, b);
+  const dt = performance.now() - t0;
+  const used = process.memoryUsage().heapUsed - before;
+  assert.equal(pairs.length, MAX_SAME_OBJECT_PAIRS);
+  assert.ok(dt < 250, `pairing took ${dt}ms`);
+  assert.ok(used < 80 * 1024 * 1024, `pairing used ${used} bytes`);
 });
