@@ -1,4 +1,4 @@
-import type { JwtToken, ActorId } from "./types.ts";
+import type { JwtToken, ActorId, JwtSigStatus } from "./types.ts";
 
 function b64urlToUtf8(input: string): string {
   const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
@@ -21,23 +21,21 @@ function parseJson(s: string): Record<string, unknown> {
   }
 }
 
-/** Three segments, non-empty signature (HS256/RS256/…). */
-const JWT_SIGNED_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
-/** Two segments, optional trailing dot (alg=none / unsigned). */
-const JWT_TWO_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+/g;
+/** Compact JWT: two or three segments. Third group is greedy so a signature is not split off as a second token. */
+const JWT_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/g;
 
 export function extractJwtStrings(text: string): string[] {
-  const signed: string[] = [];
-  for (const m of text.matchAll(JWT_SIGNED_RE)) signed.push(m[0]);
-
-  const unsigned: string[] = [];
-  for (const m of text.matchAll(JWT_TWO_RE)) {
-    const two = m[0];
-    const covered = signed.some((s) => s === two || s.startsWith(`${two}.`));
-    if (!covered) unsigned.push(two);
+  const found = new Set<string>();
+  for (const m of text.matchAll(JWT_RE)) {
+    const raw = m[0];
+    const segs = raw.replace(/\.$/, "").split(".");
+    if (segs.length >= 3 && (segs[2] ?? "").length) {
+      found.add(`${segs[0]}.${segs[1]}.${segs[2]}`);
+    } else if (segs.length >= 2) {
+      found.add(`${segs[0]}.${segs[1]}`);
+    }
   }
-
-  return [...new Set([...signed, ...unsigned])];
+  return [...found];
 }
 
 export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToken | null {
@@ -50,8 +48,9 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
   const alg = typeof header.alg === "string" ? header.alg : undefined;
   const issues: string[] = [];
   const algLc = (alg ?? "").toLowerCase();
+  const sigStatus: JwtSigStatus = signature.length ? "unverified" : "unsigned";
   if (!alg || algLc === "none" || algLc === "n0ne") issues.push("alg is none / missing — signature not bound");
-  if (!signature.length) issues.push("unsigned (two-part) token");
+  if (sigStatus === "unsigned") issues.push("unsigned (two-part) token");
   if (header.jwk) issues.push("embedded jwk in header (confused-deputy / key injection)");
   if (typeof header.jku === "string") issues.push(`jku remote key URL: ${header.jku}`);
   if (typeof header.x5u === "string") issues.push(`x5u remote cert URL: ${header.x5u}`);
@@ -72,7 +71,7 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
   if (payload.sub && payload.userId && String(payload.sub) !== String(payload.userId))
     issues.push("sub and userId disagree");
   const parts = signature.length ? 3 : 2;
-  return { actor, raw, source, header, payload, alg, parts, issues };
+  return { actor, raw, source, header, payload, alg, parts, signature, sigStatus, issues };
 }
 
 export function utf8ToB64url(s: string): string {
