@@ -2,6 +2,9 @@ export type ActorId = "A" | "B";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
+/** unsigned = no signature segment. unverified = third segment present, HMAC/RSA not checked (no key). */
+export type JwtSigStatus = "unsigned" | "unverified";
+
 export interface HttpHeader {
   name: string;
   value: string;
@@ -34,6 +37,8 @@ export interface JwtToken {
   payload: Record<string, unknown>;
   alg?: string;
   parts: number;
+  signature: string;
+  sigStatus: JwtSigStatus;
   issues: string[];
 }
 
