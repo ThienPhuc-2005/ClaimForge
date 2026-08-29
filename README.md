@@ -1,16 +1,30 @@
 # ClaimForge
 
-Client-side red-team auth desk. Import two captures (HAR, Burp Save-items XML, raw HTTP, or JWT), then:
+Client-side red-team auth desk. Import two captures (HAR, Burp Save-items XML, raw HTTP, or JWT). Analysis stays in the browser.
 
-1. **Findings** — BOLA/IDOR, JWT, cookies, CORS, mass-assign. Observation / Suspicion / Confirmed.
-2. **Playbook** — kill chain + curl / raw HTTP (copy into your interceptor; this app never fires them).
-3. **Forge** — alg none, role admin, swap sub, HS256 sign, RS256 / JWKS verify, iss/aud.
+## Desk
 
-Inspect (AuthZ diff, ID graph, loot, timeline, traffic, victim lab) is behind **More**.
+Primary tabs (arrow keys / Home / End move between these only):
 
-Analysis runs in the browser. A hosted shell may still load platform scripts, so this is **client-side processing**, not a fully air-gapped offline binary. Lab capture (alice vs bob) loads by default.
+1. **Findings** — BOLA/IDOR, JWT, cookies, CORS, mass-assign. Observation / Suspicion / Confirmed. Confirmed BOLA needs `ownerId` / inventory, not an unverified JWT `sub`.
+2. **Playbook** — kill chain + curl / raw HTTP for your interceptor. This app never fires them.
+3. **Forge** — alg none, role admin, swap `sub`, HS256 sign, RS256 / JWKS verify, iss/aud.
 
-![ClaimForge desk](docs/screenshots/desk.png)
+**More** is a separate inspect menu (not in the tab list): AuthZ diff, ID graph, Loot, Timeline, Traffic, Victim lab.
+
+Captures are not stored unless you check **Keep HAR / JWT / cookies in this browser**. Exports redact tokens, cookies, and passwords.
+
+![Empty desk / onboarding](docs/screenshots/onboarding.png)
+
+![Findings after lab capture](docs/screenshots/desk.png)
+
+![Playbook kill chain](docs/screenshots/playbook.png)
+
+![Forge JWT tools](docs/screenshots/forge.png)
+
+![More views — ID graph](docs/screenshots/more.png)
+
+![Mobile findings](docs/screenshots/mobile.png)
 
 ## Run
 
@@ -19,15 +33,27 @@ npm ci
 npm run dev
 ```
 
-Gates: `npm run typecheck`, `npm run lint`, `npm run test:claimforge`, `npm run build`.
+Gates:
 
-GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm run lint`, and `npm run test:claimforge`. Parser fuzz and accuracy fixtures live in `src/lib/claimforge/parse.fuzz.test.ts` and `accuracy.test.ts`.
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run test:e2e
+npm run build
+```
 
-Heuristics are capture-side. Confirmed BOLA needs `ownerId` / inventory, not an unverified JWT `sub`. Replay curls are for an authorized lab proxy.
+`npm run test` runs ClaimForge unit tests (`test:claimforge`), including desk keyboard/ARIA helpers, parser fuzz, and accuracy fixtures. GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, lint, and `test:claimforge`. `npm run test:e2e` expects the app already serving (same host as `npm run dev`).
+
+Heuristics are capture-side. Replay curls are for an authorized lab proxy.
+
+## Victim lab
+
+Same-origin API with **Vulnerable** and **Fixed** implementations (separate capture buckets). Fixed signs HS256 with a server-only key, binds role to the account record, and revokes JWT `jti` on logout. Vulnerable still accepts alg=none and does not revoke.
 
 ## Scope
 
-Authorized lab / engagement traffic only. Replay packs are for a proxy you control — ClaimForge does not send captured requests at live hosts (optional JWKS URL fetch is the only network call you can opt into). Exports redact tokens, cookies, and passwords.
+Authorized lab / engagement traffic only. ClaimForge does not send captured requests at live hosts (optional JWKS URL fetch is the only network call you can opt into).
 
 ## Threat model and limitations
 

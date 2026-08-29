@@ -212,7 +212,7 @@ function tokenIdentityKey(token: string): string {
         }
       }
     } catch {
-      /* token is opaque — fall through to hashing the raw string */
+      /* ignore malformed JWT */
     }
   }
   return createHash("sha256").update(token).digest("base64url");

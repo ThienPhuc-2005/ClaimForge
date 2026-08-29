@@ -17,6 +17,13 @@ import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
 import { engagementMarkdown, exportReportJson } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
+import {
+  deskPanelLabelledBy,
+  deskPanelRole,
+  isDeskNavKey,
+  isPrimaryTab,
+  nextPrimaryTab,
+} from "@/lib/claimforge/desk-nav.ts";
 import type { Finding, Severity } from "@/lib/claimforge/types";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -35,8 +42,6 @@ const MORE_TABS = [
   { id: "traffic", label: "Traffic" },
   { id: "lab", label: "Victim lab" },
 ] as const;
-
-const TABS = [...PRIMARY_TABS, ...MORE_TABS] as const;
 
 function Home() {
   const {
@@ -71,19 +76,21 @@ function Home() {
     URL.revokeObjectURL(url);
   }
 
-  function onTabKey(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+  function onTabKey(e: KeyboardEvent<HTMLElement>) {
+    if (!isDeskNavKey(e.key)) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("select, textarea, input")) return;
     e.preventDefault();
-    const i = TABS.findIndex((t) => t.id === tab);
-    let next = i;
-    if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
-    if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
-    if (e.key === "Home") next = 0;
-    if (e.key === "End") next = TABS.length - 1;
-    const id = TABS[next]!.id;
+    const focusedId = target?.id?.startsWith("tab-") ? target.id.slice(4) : "";
+    const id = nextPrimaryTab(focusedId, tab, e.key);
     setTab(id);
     requestAnimationFrame(() => document.getElementById(`tab-${id}`)?.focus());
   }
+
+  const primarySelected = isPrimaryTab(tab);
+  const moreLabel = MORE_TABS.find((t) => t.id === tab)?.label;
+  const labelledBy = deskPanelLabelledBy(tab);
+  const panelName = moreLabel ?? PRIMARY_TABS.find((t) => t.id === tab)?.label ?? "Analysis";
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
@@ -159,12 +166,15 @@ function Home() {
         <section
           id="desk"
           className="order-1 min-w-0 rounded-xl border border-border bg-surface p-3 md:p-4 lg:order-2 lg:col-start-2 lg:row-start-1"
-        >          <div
-            className="flex gap-1 overflow-x-auto pb-3"
-            role="tablist"
-            aria-label="Analysis views"
-            onKeyDown={onTabKey}
-          >
+        >
+          <div className="flex flex-wrap items-end gap-2 overflow-x-auto pb-3">
+            <div
+              className="flex gap-1"
+              role="tablist"
+              aria-label="Primary analysis views"
+              aria-orientation="horizontal"
+              onKeyDown={onTabKey}
+            >
             {PRIMARY_TABS.map((t) => (
               <button
                 key={t.id}
@@ -172,9 +182,10 @@ function Home() {
                 type="button"
                 role="tab"
                 aria-selected={tab === t.id}
-                aria-controls="desk-panel"
-                tabIndex={tab === t.id ? 0 : -1}
+                aria-controls={primarySelected ? "desk-panel" : undefined}
+                tabIndex={tab === t.id || (!primarySelected && t.id === "findings") ? 0 : -1}
                 onClick={() => setTab(t.id)}
+                onKeyDown={onTabKey}
                 className={cn(
                   "shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   tab === t.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated hover:text-fg",
@@ -183,10 +194,12 @@ function Home() {
                 {t.label}
               </button>
             ))}
+            </div>
             <label className="ml-auto shrink-0 text-xs text-muted">
               More
               <select
-                className="ml-2 h-11 rounded-md border border-border bg-elevated px-2 text-sm text-fg"
+                id="more-views-select"
+                className="ml-2 h-11 rounded-md border border-border bg-elevated px-2 text-sm text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label="More analysis views"
                 value={MORE_TABS.some((t) => t.id === tab) ? tab : ""}
                 onChange={(e) => {
@@ -203,7 +216,12 @@ function Home() {
               </select>
             </label>
           </div>
-          <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+          <div
+            id="desk-panel"
+            role={deskPanelRole(tab)}
+            aria-labelledby={labelledBy}
+            aria-label={labelledBy ? undefined : panelName}
+          >
             {!workspace.requests.length && tab !== "lab" ? <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} /> : null}
             {tab === "findings" && workspace.requests.length > 0 && <FindingsList findings={workspace.findings} />}
             {tab === "playbook" && <PlaybookView />}

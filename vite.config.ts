@@ -61,61 +61,6 @@ function pgliteBootstrapPlugin(): Plugin {
  * and returns the 302 / completion HTML. Deployed apps do not use the popup
  * (full-page OAuth redirect), so `apply: "serve"` is enough.
  */
-function labApiPlugin(): Plugin {
-  return {
-    name: "claimforge-lab-api",
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const rawUrl = req.url ?? "";
-        const pathOnly = rawUrl.split("?", 1)[0] ?? "";
-        if (!pathOnly.startsWith("/api/lab")) {
-          next();
-          return;
-        }
-        try {
-          const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost:8080");
-          const proto = String(
-            req.headers["x-forwarded-proto"] ??
-              ((req.socket as { encrypted?: boolean } | undefined)?.encrypted ? "https" : "http"),
-          );
-          const chunks: Buffer[] = [];
-          for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
-          const body = Buffer.concat(chunks);
-          const headers = new Headers();
-          for (const [key, value] of Object.entries(req.headers)) {
-            if (value === undefined) continue;
-            if (Array.isArray(value)) {
-              for (const v of value) headers.append(key, v);
-            } else headers.set(key, value);
-          }
-          const method = (req.method ?? "GET").toUpperCase();
-          const request = new Request(`${proto}://${host}${rawUrl}`, {
-            method,
-            headers,
-            body: method === "GET" || method === "HEAD" ? undefined : body,
-          });
-          const mod = (await server.ssrLoadModule("/src/lib/lab/engine.ts")) as {
-            handleLabRequest: (r: Request) => Promise<Response>;
-          };
-          const response = await mod.handleLabRequest(request);
-          res.statusCode = response.status;
-          response.headers.forEach((value, key) => {
-            res.setHeader(key, value);
-          });
-          res.end(Buffer.from(await response.arrayBuffer()));
-        } catch (err) {
-          console.error("[lab] failed", err);
-          if (!res.headersSent) {
-            res.statusCode = 500;
-            res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify({ error: "lab failed" }));
-          }
-        }
-      });
-    },
-  };
-}
-
 function authPopupPlugin(): Plugin {
   return {
     name: "app-builder:auth-popup",
@@ -212,10 +157,8 @@ export default defineConfig(({ command, isPreview }) => ({
     strictPort: true,
   },
   resolve: { tsconfigPaths: true },
-  worker: { format: "es" },
   plugins: [
     pgliteBootstrapPlugin(),
-    labApiPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
     authPopupPlugin(),
     // Dev-only /__app-env, read by scripts/check-auth-invariant.mjs.

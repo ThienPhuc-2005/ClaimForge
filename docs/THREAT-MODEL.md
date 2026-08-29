@@ -60,6 +60,13 @@ Fixed mode signs HS256 with a **server-only** HMAC key (never shipped to the cli
 
 ## Screenshots
 
-- `docs/screenshots/desk.png` — findings desk
-- `docs/screenshots/mobile.png` — mobile, results first, actors collapsed
 - `docs/screenshots/onboarding.png` — workflow 1–2–3
+- `docs/screenshots/desk.png` — Findings after lab capture
+- `docs/screenshots/playbook.png` — kill chain + replay pack
+- `docs/screenshots/forge.png` — local JWT mutate / sign / verify
+- `docs/screenshots/more.png` — More inspect views (ID graph)
+- `docs/screenshots/mobile.png` — mobile, results first, actors collapsed
+
+## Production headers
+
+Hosted / `vite preview` responses set Content-Security-Policy (allows the grok.com PWA injector, module workers + `blob:`, and optional JWKS `https:` connect), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` (camera / microphone / geolocation / payment / usb off), and frame protection (`frame-ancestors 'none'` plus `X-Frame-Options: DENY`). The Vite live-preview server does not apply these so the preview iframe still works.
