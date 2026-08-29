@@ -57,7 +57,7 @@ export function ForgeView() {
         >
           {tokens.map((t, i) => (
             <option key={i} value={i}>
-              {t.actor} · {t.alg ?? "?"} · {t.source}
+              {t.actor} · {t.alg ?? "?"} · {t.sigStatus} · {t.source}
             </option>
           ))}
         </select>
