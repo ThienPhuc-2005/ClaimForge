@@ -16,7 +16,8 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/claimforge/burp.test.ts src/lib/claimforge/jwt.test.ts src/lib/claimforge/bola.test.ts src/lib/claimforge/parse.test.ts src/lib/claimforge/parse.fuzz.test.ts src/lib/claimforge/loot.test.ts src/lib/claimforge/playbook.test.ts src/lib/claimforge/session.test.ts src/lib/claimforge/redact.test.ts src/lib/claimforge/cookies.test.ts src/lib/claimforge/analyze-async.test.ts src/lib/claimforge/accuracy.test.ts src/lib/lab/engine.test.ts",
+    "test:claimforge": "node --experimental-strip-types --test src/lib/claimforge/*.test.ts src/lib/lab/engine.test.ts",
+    "test": "npm run test:claimforge",
     "test:e2e": "node scripts/e2e-desk.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."

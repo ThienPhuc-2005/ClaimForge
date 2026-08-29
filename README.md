@@ -19,9 +19,9 @@ npm ci
 npm run dev
 ```
 
-Gates: `npm run typecheck`, `npm run test:claimforge`, `npm run lint`, `npm run build`.
+Gates: `npm run typecheck`, `npm run lint`, `npm run test:claimforge`, `npm run build`.
 
-GitHub Actions (`.github/workflows/ci.yml`) runs those plus Playwright desk e2e (`npm run test:e2e` against a preview server). Parser fuzz and accuracy fixtures live in `src/lib/claimforge/parse.fuzz.test.ts` and `accuracy.test.ts`.
+GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm run lint`, and `npm run test:claimforge`. Parser fuzz and accuracy fixtures live in `src/lib/claimforge/parse.fuzz.test.ts` and `accuracy.test.ts`.
 
 Heuristics are capture-side. Confirmed BOLA needs `ownerId` / inventory, not an unverified JWT `sub`. Replay curls are for an authorized lab proxy.
 
