@@ -1,4 +1,4 @@
-import type { AttackPath, CapturedRequest, Finding, JwtToken, ReplayItem, Workspace } from "./types.ts";
+import type { AttackPath, CapturedRequest, Finding, HttpHeader, JwtToken, ReplayItem, Workspace } from "./types.ts";
 import { bearerOf } from "./loot.ts";
 import { headerValue } from "./cookies.ts";
 import { mintJwt } from "./jwt.ts";
@@ -8,48 +8,77 @@ function sh(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-function curlGet(url: string, bearer?: string, cookie?: string): string {
-  const parts = ["curl", "-sk", sh(url)];
-  if (bearer) parts.splice(2, 0, "-H", sh(`Authorization: Bearer ${bearer}`));
-  if (cookie) parts.splice(2, 0, "-H", sh(`Cookie: ${cookie}`));
+const SKIP_HOP = /^(host|content-length|connection|transfer-encoding|accept-encoding)$/i;
+
+export function curlReplay(sample: CapturedRequest, auth?: { bearer?: string; cookie?: string }): string {
+  const parts = ["curl", "-sS", sh(sample.url)];
+  const method = sample.method && sample.method !== "GET" ? sample.method : "";
+  if (method) parts.splice(2, 0, "-X", method);
+  const headers: HttpHeader[] = [...sample.requestHeaders];
+  if (auth?.bearer) {
+    const i = headers.findIndex((h) => h.name.toLowerCase() === "authorization");
+    const h = { name: "Authorization", value: `Bearer ${auth.bearer}` };
+    if (i >= 0) headers[i] = h;
+    else headers.push(h);
+  }
+  if (auth?.cookie) {
+    const i = headers.findIndex((h) => h.name.toLowerCase() === "cookie");
+    const h = { name: "Cookie", value: auth.cookie };
+    if (i >= 0) headers[i] = h;
+    else headers.push(h);
+  }
+  for (const h of headers) {
+    if (SKIP_HOP.test(h.name)) continue;
+    parts.push("-H", sh(`${h.name}: ${h.value}`));
+  }
+  if (sample.requestBody) parts.push("--data-binary", sh(sample.requestBody));
   return parts.join(" ");
 }
 
-function rawHttp(method: string, url: string, bearer?: string, body?: string): string {
+function rawHttpFromSample(sample: CapturedRequest, auth?: { bearer?: string; cookie?: string }): string {
   let u: URL;
   try {
-    u = new URL(url);
+    u = new URL(sample.url);
   } catch {
-    return `${method} ${url}`;
+    return `${sample.method} ${sample.url}`;
   }
-  const lines = [`${method} ${u.pathname}${u.search} HTTP/1.1`, `Host: ${u.host}`];
+  const lines = [`${sample.method} ${u.pathname}${u.search} HTTP/1.1`, `Host: ${u.host}`];
+  const bearer = auth?.bearer ?? bearerOf(sample);
+  const cookie = auth?.cookie ?? headerValue(sample.requestHeaders, "cookie");
+  for (const h of sample.requestHeaders) {
+    if (SKIP_HOP.test(h.name)) continue;
+    if (/^authorization$/i.test(h.name) && bearer) continue;
+    if (/^cookie$/i.test(h.name) && cookie) continue;
+    lines.push(`${h.name}: ${h.value}`);
+  }
   if (bearer) lines.push(`Authorization: Bearer ${bearer}`);
-  if (body) {
-    lines.push("Content-Type: application/json", `Content-Length: ${body.length}`, "", body);
+  if (cookie) lines.push(`Cookie: ${cookie}`);
+  if (sample.requestBody) {
+    lines.push("", sample.requestBody);
   } else lines.push("", "");
   return lines.join("\n");
 }
 
 export function buildReplays(ws: Pick<Workspace, "requests" | "jwts" | "graph" | "aLabel" | "bLabel">): ReplayItem[] {
   const out: ReplayItem[] = [];
-  const aReqs = ws.requests.filter((r) => r.actor === "A");
-  const bReqs = ws.requests.filter((r) => r.actor === "B");
+  const aReqs = ws.requests.filter((r) => r.actor === "A" && r.method !== "PASTE");
+  const bReqs = ws.requests.filter((r) => r.actor === "B" && r.method !== "PASTE");
   const bTok = bReqs.map(bearerOf).find(Boolean);
-  const aTok = aReqs.map(bearerOf).find(Boolean);
   const bCookie = bReqs.map((r) => headerValue(r.requestHeaders, "cookie")).find(Boolean);
 
   const bola = ws.graph.edges.filter((e) => e.bola);
   for (const e of bola) {
-    const sample = [...aReqs, ...bReqs].find((r) => `${r.method} ${r.path}` === e.via || e.via.endsWith(r.path));
-    const url = sample?.url;
-    if (!url || !bTok) continue;
+    const sample =
+      aReqs.find((r) => `${r.method} ${r.path}` === e.via || e.via.endsWith(r.path)) ??
+      bReqs.find((r) => `${r.method} ${r.path}` === e.via || e.via.endsWith(r.path));
+    if (!sample || !bTok) continue;
     out.push({
       id: `replay-bola-${out.length}`,
       title: `BOLA · ${ws.bLabel} token on ${e.via}`,
       severity: "critical",
-      note: "Paste into your interceptor against an in-scope lab. ClaimForge does not send it.",
-      curl: curlGet(url, bTok, bCookie),
-      raw: rawHttp(sample?.method ?? "GET", url, bTok),
+      note: "Paste into your interceptor against an in-scope lab. ClaimForge does not send it. TLS verify stays on (no -k).",
+      curl: curlReplay(sample, { bearer: bTok, cookie: bCookie }),
+      raw: rawHttpFromSample(sample, { bearer: bTok, cookie: bCookie }),
     });
   }
 
@@ -58,25 +87,35 @@ export function buildReplays(ws: Pick<Workspace, "requests" | "jwts" | "graph" |
     const admin = mintJwt({ alg: "none", typ: "JWT" }, { ...noneJwt.payload, role: "admin", is_admin: true });
     const hostReq = [...aReqs, ...bReqs].find((r) => r.path.includes("/admin") || r.template.includes("/me")) ?? aReqs[0];
     if (hostReq) {
-      const adminUrl = hostReq.origin ? `${hostReq.origin}${hostReq.path.startsWith("/admin") ? hostReq.path : "/api/admin/users"}` : hostReq.url;
+      const forged: CapturedRequest = {
+        ...hostReq,
+        method: "GET",
+        requestBody: undefined,
+        requestHeaders: hostReq.requestHeaders.filter((h) => !/^authorization$/i.test(h.name)),
+      };
       out.push({
         id: "replay-none-admin",
         title: "Unsigned JWT · role=admin (forged locally)",
         severity: "high",
         note: "Generated here. Replay only in a lab proxy you control.",
-        curl: curlGet(adminUrl, admin),
-        raw: rawHttp("GET", adminUrl, admin),
+        curl: curlReplay(forged, { bearer: admin }),
+        raw: rawHttpFromSample(forged, { bearer: admin }),
       });
     }
   }
 
-  const swap = interestingSwap(aReqs, bReqs, bTok);
+  const swap = interestingSwap(aReqs, bReqs, bTok, bCookie);
   if (swap) out.push(swap);
 
   return dedupeReplays(out);
 }
 
-function interestingSwap(aReqs: CapturedRequest[], bReqs: CapturedRequest[], bTok?: string): ReplayItem | null {
+function interestingSwap(
+  aReqs: CapturedRequest[],
+  bReqs: CapturedRequest[],
+  bTok?: string,
+  bCookie?: string,
+): ReplayItem | null {
   if (!bTok) return null;
   const aObj = aReqs.find((r) => pathIds(r.path).length && r.status >= 200 && r.status < 300 && r.method === "GET");
   if (!aObj) return null;
@@ -84,16 +123,12 @@ function interestingSwap(aReqs: CapturedRequest[], bReqs: CapturedRequest[], bTo
   if (already) return null;
   return {
     id: "replay-swap-id",
-    title: `Hypothesis · swap ${wsPath(aObj)} onto B session`,
+    title: `Hypothesis · swap ${aObj.method} ${aObj.path} onto B session`,
     severity: "medium",
     note: "B never hit this path in the capture. Test in-scope only.",
-    curl: curlGet(aObj.url, bTok),
-    raw: rawHttp("GET", aObj.url, bTok),
+    curl: curlReplay(aObj, { bearer: bTok, cookie: bCookie }),
+    raw: rawHttpFromSample(aObj, { bearer: bTok, cookie: bCookie }),
   };
-}
-
-function wsPath(r: CapturedRequest) {
-  return `${r.method} ${r.path}`;
 }
 
 function dedupeReplays(items: ReplayItem[]): ReplayItem[] {
@@ -115,7 +150,7 @@ export function buildPaths(ws: {
   diffs: Workspace["diffs"];
 }): AttackPath[] {
   const paths: AttackPath[] = [];
-  const bolaF = ws.findings.filter((f) => /BOLA|Same-object/i.test(f.title));
+  const bolaF = ws.findings.filter((f) => f.confidence === "confirmed" && /BOLA|IDOR/i.test(f.title));
   if (bolaF.length) {
     paths.push({
       id: "path-horizontal",
@@ -173,6 +208,21 @@ export function buildPaths(ws: {
       findingIds: [],
       steps: [
         ...denied.slice(0, 4).map((d) => `${d.method} ${d.template} denied for B — retry with forged admin JWT in the lab proxy.`),
+      ],
+    });
+  }
+
+  const sessF = ws.findings.filter((f) => /logout/i.test(f.title));
+  if (sessF.length) {
+    paths.push({
+      id: "path-logout",
+      title: "Token still valid after logout",
+      objective: "Prove the server does not revoke the bearer/session on logout.",
+      findingIds: sessF.map((f) => f.id),
+      steps: [
+        "Capture login, a privileged GET, logout, then the same GET.",
+        "If the last GET is 2xx, the session was not bound to a denylist.",
+        "Replay that curl from Playbook on the lab. Do not fire it from this app.",
       ],
     });
   }

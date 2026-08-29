@@ -7,9 +7,11 @@ export function CopyBtn({ text, label = "Copy" }: { text: string; label?: string
   return (
     <button
       type="button"
+      aria-label={ok ? "Copied" : label}
       className={cn(
         "inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium",
         "bg-elevated text-fg transition-colors duration-150 hover:border-accent",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
       )}
       onClick={async () => {
         try {
@@ -26,7 +28,7 @@ export function CopyBtn({ text, label = "Copy" }: { text: string; label?: string
         window.setTimeout(() => setOk(false), 1200);
       }}
     >
-      {ok ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      {ok ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
       {ok ? "Copied" : label}
     </button>
   );

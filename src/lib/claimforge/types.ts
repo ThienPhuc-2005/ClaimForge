@@ -2,8 +2,10 @@ export type ActorId = "A" | "B";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
-/** unsigned = no signature segment. unverified = third segment present, HMAC/RSA not checked (no key). */
-export type JwtSigStatus = "unsigned" | "unverified";
+/** unsigned = no signature. unverified = third segment present, not checked. verified/invalid = jose result. */
+export type JwtSigStatus = "unsigned" | "unverified" | "verified" | "invalid";
+
+export type FindingConfidence = "observation" | "suspicion" | "confirmed";
 
 export interface HttpHeader {
   name: string;
@@ -71,6 +73,7 @@ export interface TimelineEvent {
 export interface Finding {
   id: string;
   severity: Severity;
+  confidence: FindingConfidence;
   title: string;
   why: string;
   evidence: string[];
@@ -85,7 +88,7 @@ export interface DiffRow {
   bStatuses: number[];
   aSample?: CapturedRequest;
   bSample?: CapturedRequest;
-  verdict: "bola" | "denied" | "same" | "a-only" | "b-only" | "mixed";
+  verdict: "bola" | "suspect" | "shared" | "denied" | "same" | "a-only" | "b-only" | "mixed";
   note: string;
 }
 

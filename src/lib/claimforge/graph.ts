@@ -104,14 +104,6 @@ export function buildIdGraph(
     }
   }
 
-  // If an object was never given owners via JSON but only A touched it in-path, mark A as owner
-  for (const n of nodes.values()) {
-    if (n.kind !== "object") continue;
-    if (n.owners.length) continue;
-    const accessors = [...new Set(edges.filter((e) => e.to === n.id && e.kind === "access").map((e) => e.actor).filter(Boolean))] as ActorId[];
-    if (accessors.length === 1) n.owners = accessors;
-  }
-
   for (const e of edges) {
     if (e.kind !== "access") continue;
     const obj = nodes.get(e.to);

@@ -7,13 +7,15 @@ import type {
   TimelineEvent,
   Workspace,
 } from "./types.ts";
-import { headerValue, parseCookieHeader, parseSetCookie } from "./cookies.ts";
+import { headerValue, headerValues, parseCookieHeader, parseSetCookie } from "./cookies.ts";
 import { extractJwtStrings, inspectJwt, jwtSubject } from "./jwt.ts";
 import { parseHarLike, parseJwtPasted, resetParseIds } from "./parse.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
 import { buildPaths, buildReplays } from "./playbook.ts";
+import { classifySameObject, looksPublicOrShared, sameObjectHits, strongestClass } from "./bola.ts";
+import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
 
 function collectArtifacts(requests: CapturedRequest[]) {
   const jwts: JwtToken[] = [];
@@ -36,8 +38,9 @@ function collectArtifacts(requests: CapturedRequest[]) {
     }
     const ck = headerValue(req.requestHeaders, "cookie");
     if (ck) cookies.push(...parseCookieHeader(ck, req.actor));
-    const sc = headerValue(req.responseHeaders, "set-cookie");
-    if (sc) cookies.push(...parseSetCookie(sc, req.actor));
+    for (const sc of headerValues(req.responseHeaders, "set-cookie")) {
+      cookies.push(...parseSetCookie(sc, req.actor));
+    }
   }
   return { jwts, cookies };
 }
@@ -46,25 +49,8 @@ function buildTimeline(requests: CapturedRequest[]): TimelineEvent[] {
   const sorted = [...requests].sort((a, b) => a.startedAt - b.startedAt);
   const events: TimelineEvent[] = [];
   for (const req of sorted) {
-    const p = req.path.toLowerCase();
-    let kind: TimelineEvent["kind"] = "traffic";
-    let label = `${req.method} ${req.template}`;
-    if (/login|signin|oauth|token$|session/.test(p) && req.method !== "GET") {
-      kind = "login";
-      label = `Login ${req.path}`;
-    } else if (/refresh/.test(p)) {
-      kind = "refresh";
-      label = "Token refresh";
-    } else if (/logout|signout|revoke/.test(p)) {
-      kind = "logout";
-      label = "Logout";
-    } else if (req.status === 401 || req.status === 403) {
-      kind = "error";
-      label = `${req.status} ${req.template}`;
-    } else if (headerValue(req.requestHeaders, "authorization")) {
-      kind = "authz";
-      label = `${req.method} ${req.template} → ${req.status || "—"}`;
-    }
+    if (req.method === "PASTE") continue;
+    const { kind, label } = classifyTimeline(req);
     events.push({
       at: req.startedAt,
       actor: req.actor,
@@ -88,7 +74,11 @@ function jsonKeys(text?: string): string[] {
   return [];
 }
 
-function diffRows(requests: CapturedRequest[]): DiffRow[] {
+function diffRows(
+  requests: CapturedRequest[],
+  ownedA: Set<string>,
+  ownedB: Set<string>,
+): DiffRow[] {
   const groups = new Map<string, CapturedRequest[]>();
   for (const r of requests) {
     if (r.method === "PASTE") continue;
@@ -119,28 +109,29 @@ function diffRows(requests: CapturedRequest[]): DiffRow[] {
       const aOk = a.some((x) => x.status >= 200 && x.status < 300);
       const bOk = b.some((x) => x.status >= 200 && x.status < 300);
       const bDenied = b.some((x) => x.status === 401 || x.status === 403);
-      const sameObject = a.some(
-        (ar) =>
-          ar.status >= 200 &&
-          ar.status < 300 &&
-          pathIds(ar.path).length > 0 &&
-          b.some((br) => br.path === ar.path && br.status >= 200 && br.status < 300),
-      );
-      if (sameObject) {
+      const pairs = sameObjectHits(a, b);
+      const classes = pairs.map(([ar, br]) => {
+        const id = pathIds(ar.path)[0] ?? "";
+        return classifySameObject(id, ar.path, [ar.responseBody, br.responseBody], ownedA, ownedB);
+      });
+      const top = strongestClass(classes);
+      if (top === "confirmed") {
         verdict = "bola";
-        note = "Both actors 2xx on the same object id";
+        note = "Confirmed BOLA: ownership evidence + B 2xx on A's object";
+      } else if (top === "observation") {
+        verdict = "shared";
+        note = "Observation: both 2xx on a public/shared resource — not BOLA";
+      } else if (top === "suspicion") {
+        verdict = "suspect";
+        note = "Suspicion: both 2xx on the same id, no ownership proof";
       } else if (aOk && bOk) {
         const aKeys = jsonKeys(aSample?.responseBody).join(",");
         const bKeys = jsonKeys(bSample?.responseBody).join(",");
         const aId = pathIds(aSample?.path ?? "").join(",");
         const bId = pathIds(bSample?.path ?? "").join(",");
-        if (aId && bId && aId !== bId && aOk && bOk) {
+        if (aId && bId && aId !== bId) {
           verdict = "mixed";
           note = "Both 2xx on different object ids — check ownership";
-        }
-        if (aId && bId && aId === bId && aSample?.path === bSample?.path) {
-          verdict = "bola";
-          note = "Both actors 2xx on the same object id";
         } else if (aKeys && bKeys && aKeys === bKeys) {
           note = "Same JSON keys, both 2xx";
         }
@@ -162,7 +153,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
   let n = 0;
   const add = (f: Omit<Finding, "id">) => {
     n += 1;
-    out.push({ id: `F${n}`, ...f });
+    out.push({ id: `F${n}`, ...f, confidence: f.confidence ?? "observation" });
   };
 
   for (const jwt of ws.jwts) {
@@ -170,6 +161,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       const sev = issue.includes("none") || issue.includes("unsigned") || issue.includes("jwk") ? "high" : "medium";
       add({
         severity: issue.includes("expired") ? "info" : sev,
+        confidence: "observation",
         title: `JWT · actor ${jwt.actor}: ${issue.split("—")[0]}`,
         why: issue,
         evidence: [`alg=${jwt.alg ?? "?"}`, `src=${jwt.source}`, `sub=${jwtSubject(jwt) ?? "?"}`],
@@ -187,6 +179,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       cookieSeen.add(key);
       add({
         severity: issue.includes("HttpOnly") ? "high" : "medium",
+        confidence: "observation",
         title: `Cookie ${c.name} (${c.actor}): ${issue}`,
         why: issue,
         evidence: [
@@ -205,12 +198,15 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (req.actor !== "B") continue;
     if (req.status < 200 || req.status >= 300) continue;
     const pids = pathIds(req.path);
-    const stolen = pids.filter((id) => ownedA.has(id) && !ownedB.has(id));
+    const stolen = pids.filter(
+      (id) => ownedA.has(id) && !ownedB.has(id) && !looksPublicOrShared(req.path, req.responseBody),
+    );
     if (stolen.length) {
       add({
         severity: "critical",
+        confidence: "confirmed",
         title: `BOLA / IDOR · B read A's object ${stolen.join(",")}`,
-        why: "Actor B received 2xx on an identifier that only appeared in actor A's session (JWT sub, body ids, or A's URLs).",
+        why: "Ownership evidence (JWT sub / ownerId) ties the object to A, and B still received 2xx.",
         evidence: [`${req.method} ${req.path} → ${req.status}`, `A owns: ${stolen.join(", ")}`],
         template: req.template,
         how: "Authorize on object owner, not on 'is authenticated'. Compare the same request as A vs B in your interceptor.",
@@ -222,7 +218,8 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (row.verdict === "bola") {
       add({
         severity: "critical",
-        title: `Same-object 2xx · ${row.method} ${row.template}`,
+        confidence: "confirmed",
+        title: `BOLA / IDOR · ${row.method} ${row.template}`,
         why: row.note,
         evidence: [
           `A statuses: ${row.aStatuses.join(",") || "—"}`,
@@ -231,7 +228,31 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
           row.bSample?.path ?? "",
         ],
         template: row.template,
-        how: "If A and B are different users, this is classic BOLA. Bind the object to session.sub before returning 200.",
+        how: "Bind the object to session.sub before returning 200. Replay B's token on A's object in a lab proxy.",
+      });
+    } else if (row.verdict === "suspect") {
+      add({
+        severity: "medium",
+        confidence: "suspicion",
+        title: `Same-object 2xx (unproven) · ${row.method} ${row.template}`,
+        why: row.note,
+        evidence: [
+          `A statuses: ${row.aStatuses.join(",") || "—"}`,
+          `B statuses: ${row.bStatuses.join(",") || "—"}`,
+          row.aSample?.path ?? "",
+        ],
+        template: row.template,
+        how: "Capture a body with ownerId/userId, or an A-only inventory listing this id, before calling it BOLA.",
+      });
+    } else if (row.verdict === "shared") {
+      add({
+        severity: "info",
+        confidence: "observation",
+        title: `Public/shared resource · ${row.method} ${row.template}`,
+        why: row.note,
+        evidence: [row.aSample?.path ?? "", row.bSample?.path ?? ""],
+        template: row.template,
+        how: "Both roles 2xx on a catalog/public/shared object is expected. Do not file as IDOR.",
       });
     }
   }
@@ -241,6 +262,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (/[?&](token|jwt|access_token)=/.test(req.url)) {
       add({
         severity: "high",
+        confidence: "observation",
         title: "Token in query string",
         why: "Secrets in URLs leak via logs, Referer, history.",
         evidence: [req.url.slice(0, 180)],
@@ -251,6 +273,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (loc.toLowerCase().startsWith("basic ")) {
       add({
         severity: "medium",
+        confidence: "observation",
         title: "HTTP Basic on captured traffic",
         why: "Basic auth is replayable from the HAR forever until the password changes.",
         evidence: [`${req.method} ${req.path}`],
@@ -263,6 +286,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     if (l.kind === "cors" || l.kind === "stack" || l.kind === "mass-assign" || l.kind === "key") {
       add({
         severity: l.severity,
+        confidence: "observation",
         title: `${l.label} · ${l.where}`,
         why: l.value,
         evidence: [l.kind, l.where],
@@ -278,9 +302,24 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     }
   }
 
+  for (const hit of tokensAliveAfterLogout(ws.requests)) {
+    add({
+      severity: "high",
+      confidence: "confirmed",
+      title: `Session lives after logout · actor ${hit.actor}`,
+      why: `${hit.method} ${hit.path} still returned ${hit.status} with a credential used before logout.`,
+      evidence: [`${hit.method} ${hit.path}`, hit.tokenHint],
+      template: hit.path,
+      how: "Invalidate server-side sessions and JWT jti on logout. Replay the post-logout request in a lab proxy.",
+    });
+  }
+
+  if (!out.length && !ws.requests.length) return [];
+
   if (!out.length) {
     add({
       severity: "info",
+      confidence: "observation",
       title: "No high-confidence auth bug in this capture",
       why: "Heuristics look for alg=none, cookie flags, and B 2xx on A's ids. Absence is not a clean bill of health.",
       evidence: [`${ws.requests.length} requests`],
@@ -304,11 +343,11 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests);
-  const diffs = diffRows(requests);
-  const idsA = actorIds(requests, jwts, "A");
-  const idsB = actorIds(requests, jwts, "B");
   const ownedA = ownedObjects(requests, jwts, "A");
   const ownedB = ownedObjects(requests, jwts, "B");
+  const diffs = diffRows(requests, ownedA, ownedB);
+  const idsA = actorIds(requests, jwts, "A");
+  const idsB = actorIds(requests, jwts, "B");
   // keep inventory lists inclusive for the loot wordlist
   const idsAAll = [...new Set([...idsA, ...ownedA])];
   const idsBAll = [...new Set([...idsB, ...ownedB])];

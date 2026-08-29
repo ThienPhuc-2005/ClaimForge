@@ -1,3 +1,4 @@
+import { SignJWT, jwtVerify, decodeJwt, decodeProtectedHeader } from "jose";
 import type { JwtToken, ActorId, JwtSigStatus } from "./types.ts";
 
 function b64urlToUtf8(input: string): string {
@@ -38,12 +39,26 @@ export function extractJwtStrings(text: string): string[] {
   return [...found];
 }
 
+function secretKey(secret: string): Uint8Array {
+  return new TextEncoder().encode(secret);
+}
+
 export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToken | null {
   const segs = raw.replace(/\.$/, "").split(".");
   if (segs.length < 2) return null;
   const signature = segs.length >= 3 ? (segs[2] ?? "") : "";
-  const header = parseJson(b64urlToUtf8(segs[0] ?? ""));
-  const payload = parseJson(b64urlToUtf8(segs[1] ?? ""));
+  let header: Record<string, unknown> = parseJson(b64urlToUtf8(segs[0] ?? ""));
+  let payload: Record<string, unknown> = parseJson(b64urlToUtf8(segs[1] ?? ""));
+  try {
+    header = { ...decodeProtectedHeader(raw), ...header };
+  } catch {
+    /* compact parse already filled header */
+  }
+  try {
+    payload = { ...decodeJwt(raw), ...payload };
+  } catch {
+    /* unsigned / malformed still parsed via b64 */
+  }
   if (!Object.keys(header).length && !Object.keys(payload).length) return null;
   const alg = typeof header.alg === "string" ? header.alg : undefined;
   const issues: string[] = [];
@@ -74,6 +89,29 @@ export function inspectJwt(raw: string, actor: ActorId, source: string): JwtToke
   return { actor, raw, source, header, payload, alg, parts, signature, sigStatus, issues };
 }
 
+/** Verify HS256 (or reject alg=none) with jose. Mutates a copy of inspectJwt. */
+export async function verifyJwtWithSecret(token: JwtToken, secret: string): Promise<JwtToken> {
+  const next = { ...token, issues: [...token.issues] };
+  const algLc = (token.alg ?? "").toLowerCase();
+  if (!token.signature || algLc === "none" || algLc === "n0ne") {
+    next.sigStatus = "unsigned";
+    return next;
+  }
+  try {
+    const { payload, protectedHeader } = await jwtVerify(token.raw, secretKey(secret), {
+      algorithms: ["HS256", "HS384", "HS512"],
+    });
+    next.sigStatus = "verified";
+    next.header = { ...next.header, ...(protectedHeader as Record<string, unknown>) };
+    next.payload = { ...next.payload, ...(payload as Record<string, unknown>) };
+    next.issues = next.issues.filter((i) => !/unsigned/i.test(i));
+  } catch (e) {
+    next.sigStatus = "invalid";
+    next.issues.push(`signature invalid (${e instanceof Error ? e.message : "verify failed"})`);
+  }
+  return next;
+}
+
 export function utf8ToB64url(s: string): string {
   const bytes = new TextEncoder().encode(s);
   let bin = "";
@@ -81,14 +119,39 @@ export function utf8ToB64url(s: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** Local compact mint. Empty signature → trailing dot (alg=none). Dummy third arg is a raw signature, not HMAC. */
 export function mintJwt(
   header: Record<string, unknown>,
   payload: Record<string, unknown>,
   signature = "",
 ): string {
+  const alg = String(header.alg ?? "none").toLowerCase();
+  if (!signature && (alg === "none" || alg === "n0ne" || !alg)) {
+    const h = utf8ToB64url(JSON.stringify({ alg: "none", typ: "JWT", ...omitAlg(header) }));
+    const p = utf8ToB64url(JSON.stringify(payload));
+    return `${h}.${p}.`;
+  }
   const h = utf8ToB64url(JSON.stringify(header));
   const p = utf8ToB64url(JSON.stringify(payload));
   return signature ? `${h}.${p}.${signature}` : `${h}.${p}.`;
+}
+
+function omitAlg(header: Record<string, unknown>): Record<string, unknown> {
+  const { alg: _a, ...rest } = header;
+  return rest;
+}
+
+/** Real HMAC-SHA256 via jose. */
+export async function signHs256(
+  payload: Record<string, unknown>,
+  secret: string,
+  header: Record<string, unknown> = {},
+): Promise<string> {
+  const { alg: _a, ...rest } = header;
+  let jwt = new SignJWT(payload).setProtectedHeader({ alg: "HS256", typ: "JWT", ...rest });
+  if (typeof payload.iat !== "number") jwt = jwt.setIssuedAt();
+  if (typeof payload.exp !== "number") jwt = jwt.setExpirationTime("2h");
+  return jwt.sign(secretKey(secret));
 }
 
 export function jwtSubject(token: JwtToken): string | null {

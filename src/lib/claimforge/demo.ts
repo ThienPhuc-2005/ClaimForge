@@ -193,5 +193,14 @@ export function demoActorB(): string {
       {},
       "",
     ),
+    entry(
+      "2026-08-28T10:01:42.000Z",
+      "GET",
+      "https://shop.lab/api/me",
+      200,
+      { Authorization: `Bearer ${BOB_HS}` },
+      { "Content-Type": "application/json" },
+      JSON.stringify({ id: "bob", email: "bob@lab.test", invoices: [8801] }),
+    ),
   ]);
 }

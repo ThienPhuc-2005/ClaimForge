@@ -7,14 +7,17 @@ import {
   ShieldAlert,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, type ReactNode } from "react";
+import { useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useForge } from "@/lib/claimforge/store";
 import { IdGraph } from "@/components/id-graph";
 import { PlaybookView } from "@/components/playbook-view";
 import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
+import { LabView } from "@/components/lab-view";
 import { engagementMarkdown } from "@/lib/claimforge/report.ts";
+import { redactWorkspace } from "@/lib/claimforge/redact.ts";
+import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import type { Finding, Severity } from "@/lib/claimforge/types";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -28,6 +31,7 @@ const TABS = [
   { id: "loot", label: "Loot" },
   { id: "timeline", label: "Timeline" },
   { id: "traffic", label: "Traffic" },
+  { id: "lab", label: "Victim lab" },
 ] as const;
 
 function Home() {
@@ -43,32 +47,46 @@ function Home() {
     setTab,
     loadDemo,
     clearAll,
+    persistCaptures,
+    setPersistCaptures,
+    analyzing,
+    importError,
   } = useForge();
   const crit = workspace.findings.filter((f) => f.severity === "critical").length;
   const high = workspace.findings.filter((f) => f.severity === "high").length;
 
   function exportReport() {
+    const safe = redactWorkspace(workspace);
     const blob = new Blob(
       [
         JSON.stringify(
           {
             generated: new Date().toISOString(),
             tool: "ClaimForge",
+            secrets: "redacted",
             actors: { A: aLabel, B: bLabel },
-            findings: workspace.findings,
-            diffs: workspace.diffs,
-            timeline: workspace.timeline,
-            jwts: workspace.jwts.map((j) => ({
+            findings: safe.findings,
+            diffs: safe.diffs,
+            timeline: safe.timeline,
+            jwts: safe.jwts.map((j) => ({
               actor: j.actor,
               alg: j.alg,
+              parts: j.parts,
+              sigStatus: j.sigStatus,
               issues: j.issues,
               payload: j.payload,
             })),
-            cookies: workspace.cookies,
-            graph: workspace.graph,
-            loot: workspace.loot,
-            paths: workspace.paths,
-            replays: workspace.replays,
+            cookies: safe.cookies.map((c) => ({
+              actor: c.actor,
+              name: c.name,
+              flags: c.flags,
+              issues: c.issues,
+              source: c.source,
+            })),
+            graph: safe.graph,
+            loot: safe.loot,
+            paths: safe.paths,
+            replays: safe.replays,
           },
           null,
           2,
@@ -84,22 +102,42 @@ function Home() {
     URL.revokeObjectURL(url);
   }
 
+  function onTabKey(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const i = TABS.findIndex((t) => t.id === tab);
+    let next = i;
+    if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
+    if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
+    if (e.key === "Home") next = 0;
+    if (e.key === "End") next = TABS.length - 1;
+    const id = TABS[next]!.id;
+    setTab(id);
+    requestAnimationFrame(() => document.getElementById(`tab-${id}`)?.focus());
+  }
+
   return (
     <div className="min-h-dvh bg-bg text-fg">
+      <a
+        href="#desk"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-accent-fg"
+      >
+        Skip to analysis
+      </a>
       <header className="border-b border-border px-4 py-3 md:px-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <KeyRound className="size-5 text-accent" strokeWidth={1.75} />
+            <KeyRound className="size-5 text-accent" strokeWidth={1.75} aria-hidden />
             <div>
               <p className="text-sm font-semibold tracking-tight">ClaimForge</p>
               <p className="text-xs text-muted">Red team auth desk · offline</p>
             </div>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
-            <GhostBtn onClick={loadDemo} icon={<FlaskConical className="size-4" />}>
+            <GhostBtn onClick={loadDemo} icon={<FlaskConical className="size-4" aria-hidden />}>
               Load lab capture
             </GhostBtn>
-            <GhostBtn onClick={exportReport} icon={<Download className="size-4" />}>
+            <GhostBtn onClick={exportReport} icon={<Download className="size-4" aria-hidden />}>
               Export JSON
             </GhostBtn>
             <GhostBtn
@@ -112,15 +150,34 @@ function Home() {
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              icon={<Download className="size-4" />}
+              icon={<Download className="size-4" aria-hidden />}
             >
               Export MD
             </GhostBtn>
-            <GhostBtn onClick={clearAll} icon={<Eraser className="size-4" />}>
+            <GhostBtn onClick={clearAll} icon={<Eraser className="size-4" aria-hidden />}>
               Clear
             </GhostBtn>
           </div>
         </div>
+        <label className="mt-3 inline-flex min-h-11 items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={persistCaptures}
+            onChange={(e) => setPersistCaptures(e.target.checked)}
+            className="size-4 accent-accent"
+          />
+          Keep HAR / JWT / cookies in this browser (off by default)
+        </label>
+        {analyzing && (
+          <p className="mt-2 text-xs text-muted" role="status" aria-live="polite">
+            Analyzing capture…
+          </p>
+        )}
+        {importError && (
+          <p className="mt-2 text-xs text-danger" role="alert">
+            {importError}
+          </p>
+        )}
         <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat k="Requests" v={String(workspace.requests.length)} />
           <Stat k="Critical" v={String(crit)} hot={crit > 0} />
@@ -130,35 +187,46 @@ function Home() {
       </header>
 
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,18rem)_1fr] md:p-6">
-        <aside className="flex flex-col gap-3">
+        <aside className="flex flex-col gap-3" aria-label="Actor captures">
           <ImportCard
             actor="A"
             label={aLabel}
             raw={aRaw}
             onLabel={(v) => setLabel("a", v)}
-            onRaw={(v) => setActor("a", v)}
+            onRaw={(v, immediate) => setActor("a", v, immediate)}
           />
           <ImportCard
             actor="B"
             label={bLabel}
             raw={bRaw}
             onLabel={(v) => setLabel("b", v)}
-            onRaw={(v) => setActor("b", v)}
+            onRaw={(v, immediate) => setActor("b", v, immediate)}
           />
           <p className="text-xs leading-relaxed text-muted">
-            Drop HAR or Burp XML for two roles. Playbook curls stay in this browser until you paste them into a lab interceptor.
+            Drop HAR or Burp XML for two roles. Captures are not saved unless you opt in. Export redacts JWT, cookie,
+            and bearer values.
           </p>
         </aside>
 
-        <section className="min-w-0 rounded-xl border border-border bg-surface p-3 md:p-4">
-          <div className="flex gap-1 overflow-x-auto pb-3">
+        <section id="desk" className="min-w-0 rounded-xl border border-border bg-surface p-3 md:p-4">
+          <div
+            className="flex gap-1 overflow-x-auto pb-3"
+            role="tablist"
+            aria-label="Analysis views"
+            onKeyDown={onTabKey}
+          >
             {TABS.map((t) => (
               <button
                 key={t.id}
+                id={`tab-${t.id}`}
                 type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                aria-controls="desk-panel"
+                tabIndex={tab === t.id ? 0 : -1}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150",
+                  "shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   tab === t.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated hover:text-fg",
                 )}
               >
@@ -166,15 +234,54 @@ function Home() {
               </button>
             ))}
           </div>
-          {tab === "findings" && <FindingsList findings={workspace.findings} />}
-          {tab === "playbook" && <PlaybookView />}
-          {tab === "forge" && <ForgeView />}
-          {tab === "diff" && <DiffTable />}
-          {tab === "graph" && <IdGraph />}
-          {tab === "loot" && <LootView />}
-          {tab === "timeline" && <Timeline />}
-          {tab === "traffic" && <Traffic />}
+          <div id="desk-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+            {!workspace.requests.length && tab !== "lab" ? <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} /> : null}
+            {tab === "findings" && workspace.requests.length > 0 && <FindingsList findings={workspace.findings} />}
+            {tab === "playbook" && <PlaybookView />}
+            {tab === "forge" && <ForgeView />}
+            {tab === "diff" && <DiffTable />}
+            {tab === "graph" && <IdGraph />}
+            {tab === "loot" && <LootView />}
+            {tab === "timeline" && <Timeline />}
+            {tab === "traffic" && <Traffic />}
+            {tab === "lab" && <LabView />}
+          </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function Onboarding({ onDemo, onLab }: { onDemo: () => void; onLab: () => void }) {
+  return (
+    <div className="flex flex-col gap-3 p-4 md:p-6">
+      <h2 className="text-base font-semibold">Start an engagement</h2>
+      <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-muted">
+        <li>Paste two captures (HAR / Burp XML) — one session per actor — or open Victim lab (Vulnerable vs Fixed).</li>
+        <li>
+          Findings split Observation / Suspicion / Confirmed. Critical BOLA needs ownership proof. Captures stay in
+          memory unless you opt in.
+        </li>
+        <li>
+          Copy a replay curl into your interceptor. This desk never fires it. Exports redact JWT, cookies, and
+          bearers.
+        </li>
+      </ol>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onDemo}
+          className="min-h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          Load sample capture
+        </button>
+        <button
+          type="button"
+          onClick={onLab}
+          className="min-h-11 rounded-md border border-border bg-elevated px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          Open victim lab
+        </button>
       </div>
     </div>
   );
@@ -193,7 +300,7 @@ function GhostBtn({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-elevated px-3 text-sm font-medium text-fg transition-colors duration-150 hover:border-accent"
+      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border bg-elevated px-3 text-sm font-medium text-fg transition-colors duration-150 hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {icon}
       {children}
@@ -221,29 +328,38 @@ function ImportCard({
   label: string;
   raw: string;
   onLabel: (v: string) => void;
-  onRaw: (v: string) => void;
+  onRaw: (v: string, immediate?: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const setImportError = useForge((s) => s.setImportError);
+  const mb = Math.round(MAX_CAPTURE_BYTES / (1024 * 1024));
   return (
     <div className="rounded-xl border border-border bg-surface p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted">Actor {actor}</span>
         <button
           type="button"
-          className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg"
+          className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           onClick={() => inputRef.current?.click()}
+          aria-label={`Upload capture file for actor ${actor}`}
         >
-          <Upload className="size-3.5" /> File
+          <Upload className="size-3.5" aria-hidden /> File
         </button>
         <input
           ref={inputRef}
           type="file"
           accept=".har,.json,.txt,.xml,application/json,text/xml,application/xml"
           className="hidden"
+          aria-label={`Upload capture for actor ${actor}, maximum ${mb} megabytes`}
           onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;
-            onRaw(await f.text());
+            if (f.size > MAX_CAPTURE_BYTES) {
+              setImportError(`Capture exceeds ${mb} MB limit.`);
+              e.target.value = "";
+              return;
+            }
+            onRaw(await f.text(), true);
             e.target.value = "";
           }}
         />
@@ -258,9 +374,11 @@ function ImportCard({
         value={raw}
         onChange={(e) => onRaw(e.target.value)}
         spellCheck={false}
+        aria-label={`Capture paste for actor ${actor}`}
         placeholder="HAR, Burp XML, raw HTTP, or JWT"
-        className="h-36 w-full resize-y rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
+        className="h-28 w-full resize-y rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2 md:h-36"
       />
+      <p className="mt-1 text-xs text-subtle">Max {mb} MB · paste is debounced</p>
     </div>
   );
 }
@@ -284,9 +402,12 @@ function FindingsList({ findings }: { findings: Finding[] }) {
             <span className={cn("rounded-sm border px-1.5 py-0.5 font-mono text-[11px] uppercase", sevClass(f.severity))}>
               {f.severity}
             </span>
-            <h2 className="text-sm font-medium">{f.title}</h2>
+            <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] uppercase text-muted">
+              {f.confidence}
+            </span>
+            <h3 className="text-sm font-medium">{f.title}</h3>
           </div>
-          <p className="mt-2 text-sm text-muted">{f.why}</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted">{f.why}</p>
           <ul className="mt-2 space-y-1 font-mono text-xs text-subtle">
             {f.evidence.filter(Boolean).map((e) => (
               <li key={e} className="truncate">
@@ -306,6 +427,7 @@ function DiffTable() {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[36rem] text-left text-sm">
+        <caption className="sr-only">Authorization diff by route</caption>
         <thead className="text-xs uppercase text-muted">
           <tr>
             <th className="py-2 pr-3 font-medium">Route</th>
@@ -323,7 +445,15 @@ function DiffTable() {
               <td className="tabular py-2 pr-3 text-xs">{row.aStatuses.join(", ") || "—"}</td>
               <td className="tabular py-2 pr-3 text-xs">{row.bStatuses.join(", ") || "—"}</td>
               <td className="py-2 text-xs">
-                <span className={cn(row.verdict === "bola" && "font-medium text-danger")}>{row.note}</span>
+                <span
+                  className={cn(
+                    row.verdict === "bola" && "font-medium text-danger",
+                    row.verdict === "suspect" && "text-warn",
+                    row.verdict === "shared" && "text-muted",
+                  )}
+                >
+                  {row.note}
+                </span>
               </td>
             </tr>
           ))}
@@ -363,6 +493,7 @@ function Traffic() {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[40rem] text-left text-xs">
+        <caption className="sr-only">Captured HTTP traffic</caption>
         <thead className="text-muted">
           <tr>
             <th className="py-2 pr-2 font-medium">Actor</th>

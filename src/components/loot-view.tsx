@@ -75,7 +75,7 @@ export function LootView() {
         <ul className="space-y-2">
           {workspace.jwts.map((j, i) => (
             <li key={i} className="rounded-md border border-border bg-bg p-2 font-mono text-xs">
-              {j.actor} · alg={j.alg ?? "?"} · {j.source}
+              {j.actor} · alg={j.alg ?? "?"} · {j.sigStatus} · {j.parts} parts · {j.source}
               {j.issues.map((x) => (
                 <p key={x} className="text-danger">
                   {x}
@@ -92,11 +92,16 @@ export function LootView() {
           {workspace.cookies.map((c, i) => (
             <li key={i} className="rounded-md border border-border bg-bg p-2 text-xs">
               <span className="font-mono">
-                {c.actor} · {c.name}
+                {c.actor} · {c.name} · {c.source}
               </span>
               <p className="text-muted">
                 HttpOnly {String(c.flags.httpOnly)} · Secure {String(c.flags.secure)} · SameSite {c.flags.sameSite ?? "∅"}
               </p>
+              {c.issues.map((issue) => (
+                <p key={issue} className="text-danger">
+                  {issue}
+                </p>
+              ))}
             </li>
           ))}
         </ul>

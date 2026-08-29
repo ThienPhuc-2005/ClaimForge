@@ -74,15 +74,32 @@ export function harvestLoot(requests: CapturedRequest[]): LootItem[] {
 
     const acao = headerValue(req.responseHeaders, "access-control-allow-origin");
     const cred = headerValue(req.responseHeaders, "access-control-allow-credentials");
-    if (acao && (acao.trim() === "*" || (cred && /true/i.test(cred)))) {
-      add({
-        kind: "cors",
-        severity: acao.trim() === "*" && cred ? "high" : "medium",
-        label: "CORS",
-        value: `${acao} credentials=${cred ?? "off"}`,
-        where,
-        actor: req.actor,
-      });
+    const authed = Boolean(
+      headerValue(req.requestHeaders, "authorization") || headerValue(req.requestHeaders, "cookie"),
+    );
+    if (req.method !== "OPTIONS" && acao) {
+      const star = acao.trim() === "*";
+      const credOn = Boolean(cred && /true/i.test(cred));
+      // * without credentials on a public GET is normal. Flag reflected/star+creds or * on authed JSON.
+      if (star && credOn) {
+        add({
+          kind: "cors",
+          severity: "high",
+          label: "CORS",
+          value: `* with credentials on ${req.origin || req.path}`,
+          where: req.origin || where,
+          actor: req.actor,
+        });
+      } else if (star && authed && req.status >= 200 && req.status < 300) {
+        add({
+          kind: "cors",
+          severity: "medium",
+          label: "CORS",
+          value: `* on authenticated ${req.method} ${req.template}`,
+          where: req.origin || where,
+          actor: req.actor,
+        });
+      }
     }
 
     const body = `${req.responseBody ?? ""}\n${req.requestBody ?? ""}`;
@@ -108,16 +125,23 @@ export function harvestLoot(requests: CapturedRequest[]): LootItem[] {
       });
     }
 
-    if (/^(POST|PUT|PATCH)$/.test(req.method)) {
+    if (/^(POST|PUT|PATCH)$/.test(req.method) && !/\/(login|signin|sign-up|register|token|refresh|logout)\b/i.test(req.path)) {
       const parsed = jsonBody(req.requestBody);
+      const resBody = jsonBody(req.responseBody);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const keys = Object.keys(parsed as object).filter((k) => MASS.test(k));
-        if (keys.length) {
+        const honored = keys.filter((k) => {
+          if (!resBody || typeof resBody !== "object" || Array.isArray(resBody)) return false;
+          const sent = (parsed as Record<string, unknown>)[k];
+          const got = (resBody as Record<string, unknown>)[k];
+          return got !== undefined && String(got) === String(sent);
+        });
+        if (honored.length && req.status >= 200 && req.status < 300) {
           add({
             kind: "mass-assign",
-            severity: req.status >= 200 && req.status < 300 ? "high" : "medium",
-            label: `Mass-assign fields: ${keys.join(", ")}`,
-            value: keys.join(", "),
+            severity: "high",
+            label: `Mass-assign honored: ${honored.join(", ")}`,
+            value: honored.join(", "),
             where,
             actor: req.actor,
           });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { extractJwtStrings, inspectJwt, mintJwt } from "./jwt.ts";
+import { extractJwtStrings, inspectJwt, mintJwt, signHs256, verifyJwtWithSecret } from "./jwt.ts";
 import { analyze } from "./analyze.ts";
 import { demoActorA, demoActorB } from "./demo.ts";
 
@@ -89,4 +89,15 @@ test("lab demo: alice none is unsigned; bob HS256 is unverified", () => {
   assert.ok(bob.every((j) => j.sigStatus !== "unsigned"));
   assert.ok(ws.findings.some((f) => /unsigned|alg is none/i.test(f.title + f.why)));
   assert.ok(ws.paths.some((p) => p.id === "path-jwt-none"));
+});
+
+test("jose signs and verifies HS256; wrong secret is invalid", async () => {
+  const token = await signHs256({ sub: "alice", role: "user" }, "lab-secret-1");
+  const ins = inspectJwt(token, "A", "forge");
+  assert.equal(ins?.sigStatus, "unverified");
+  assert.equal(ins?.parts, 3);
+  const ok = await verifyJwtWithSecret(ins!, "lab-secret-1");
+  assert.equal(ok.sigStatus, "verified");
+  const bad = await verifyJwtWithSecret(ins!, "wrong");
+  assert.equal(bad.sigStatus, "invalid");
 });

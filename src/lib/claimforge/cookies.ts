@@ -30,7 +30,7 @@ export function parseCookieHeader(header: string, actor: ActorId): CookieRecord[
         value,
         source: "request" as const,
         flags: { httpOnly: false, secure: false, sameSite: null },
-        issues: ["request Cookie has no flags — inspect matching Set-Cookie"],
+        issues: [] as string[],
       };
     })
     .filter((c) => c.name && !["expires", "path", "domain", "secure", "httponly", "samesite", "max-age"].includes(c.name.toLowerCase()));
@@ -68,12 +68,16 @@ export function parseSetCookie(header: string, actor: ActorId): CookieRecord[] {
         else if (key === "expires") flags.expires = val;
       }
       const issues: string[] = [];
-      const sessiony = /sess|token|auth|sid|jwt/i.test(name);
-      if (!flags.httpOnly && sessiony) issues.push("session-like cookie missing HttpOnly");
-      if (!flags.secure && sessiony) issues.push("session-like cookie missing Secure");
-      if (!flags.sameSite) issues.push("no SameSite");
-      else if (flags.sameSite.toLowerCase() === "none" && !flags.secure) issues.push("SameSite=None without Secure");
-      if (flags.maxAge && Number(flags.maxAge) > 60 * 60 * 24 * 30) issues.push("Max-Age > 30 days");
+      const sessiony = /^(sess|sid|token|auth|jwt|access|refresh|id_token)/i.test(name) || /session|auth/i.test(name);
+      if (sessiony) {
+        if (!flags.httpOnly) issues.push("session-like cookie missing HttpOnly");
+        if (!flags.secure) issues.push("session-like cookie missing Secure");
+        if (!flags.sameSite) issues.push("session-like cookie missing SameSite");
+        else if (flags.sameSite.toLowerCase() === "none" && !flags.secure) issues.push("SameSite=None without Secure");
+        if (flags.maxAge && Number(flags.maxAge) > 60 * 60 * 24 * 30) issues.push("Max-Age > 30 days");
+      } else if (flags.sameSite && flags.sameSite.toLowerCase() === "none" && !flags.secure) {
+        issues.push("SameSite=None without Secure");
+      }
       return { actor, name, value, source: "set-cookie" as const, flags, issues };
     })
     .filter((c) => c.name);
@@ -82,4 +86,9 @@ export function parseSetCookie(header: string, actor: ActorId): CookieRecord[] {
 export function headerValue(headers: { name: string; value: string }[], name: string): string | undefined {
   const n = name.toLowerCase();
   return headers.find((h) => h.name.toLowerCase() === n)?.value;
+}
+
+export function headerValues(headers: { name: string; value: string }[], name: string): string[] {
+  const n = name.toLowerCase();
+  return headers.filter((h) => h.name.toLowerCase() === n).map((h) => h.value);
 }

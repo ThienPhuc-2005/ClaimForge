@@ -98,10 +98,13 @@ export function ownedObjects(
       owned.add(sub);
     }
   }
-  for (const req of requests.filter((r) => r.actor === actor)) {
-    for (const rel of ownerLinks(req.responseBody)) {
-      if (subs.has(rel.owner) || !subs.size) owned.add(rel.object);
+  // Ownership from ownerId/userId across the whole capture, but only if it matches this actor's sub.
+  for (const req of requests) {
+    for (const rel of [...ownerLinks(req.responseBody), ...ownerLinks(req.requestBody)]) {
+      if (subs.has(rel.owner)) owned.add(rel.object);
     }
+  }
+  for (const req of requests.filter((r) => r.actor === actor)) {
     try {
       const body = req.responseBody ? (JSON.parse(req.responseBody) as Record<string, unknown>) : null;
       const inv = body?.invoices;

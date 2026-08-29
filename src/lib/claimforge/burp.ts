@@ -12,11 +12,12 @@ export function looksLikeBurpXml(raw: string): boolean {
 function decodeEntities(s: string): string {
   return s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, '"')
-    .replace(/'/g, "'")
-    .replace(/&/g, "&");
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, "&");
 }
 
 function attrs(open: string): Record<string, string> {
@@ -35,13 +36,17 @@ function child(xml: string, tag: string): { attr: Record<string, string>; text: 
 }
 
 function decodePayload(text: string, attr: Record<string, string>): string {
-  const isB64 = /^(true|yes|1)$/i.test(attr.base64 ?? "");
-  if (!isB64) return text;
+  const flag = (attr.base64 ?? "").toLowerCase();
+  const isB64 = /^(true|yes|1)$/i.test(flag);
   const compact = text.replace(/\s+/g, "");
+  const looksB64 = compact.length > 32 && /^[A-Za-z0-9+/_-]+=*$/.test(compact) && !text.includes("HTTP/");
+  if (!isB64 && !looksB64) return text;
   try {
-    const bin = atob(compact);
+    const bin = atob(compact.replace(/-/g, "+").replace(/_/g, "/"));
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    if (isB64 || /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP\/)/i.test(decoded)) return decoded;
+    return text;
   } catch {
     return text;
   }

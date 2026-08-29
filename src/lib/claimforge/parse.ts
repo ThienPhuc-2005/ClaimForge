@@ -3,6 +3,7 @@ import { looksLikeBurpXml, parseBurpXml } from "./burp.ts";
 import { extractJwtStrings } from "./jwt.ts";
 import { fromHttpMessages, nid, resetParseIds, splitUrl } from "./http.ts";
 import { templatize } from "./url.ts";
+import { headerValue, headerValues } from "./cookies.ts";
 
 export { resetParseIds, templatize };
 
@@ -27,18 +28,64 @@ function headersFromObject(h: unknown): HttpHeader[] {
   return [];
 }
 
+function decodeMaybeBase64(text: string | undefined, encoding?: string): string | undefined {
+  if (text == null || text === "") return text;
+  const enc = (encoding ?? "").toLowerCase();
+  if (enc !== "base64" && enc !== "true" && enc !== "1") return text;
+  const compact = text.replace(/\s+/g, "");
+  try {
+    const bin = atob(compact.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return text;
+  }
+}
+
+function harText(
+  node: { text?: string; encoding?: string; base64?: boolean | string } | undefined,
+): string | undefined {
+  if (!node) return undefined;
+  const flag = node.base64 === true || node.base64 === "true" || node.base64 === "1";
+  return decodeMaybeBase64(node.text, flag ? "base64" : node.encoding);
+}
+
 function fromHarEntry(entry: Record<string, unknown>, actor: ActorId): CapturedRequest | null {
   const req = (entry.request ?? {}) as Record<string, unknown>;
   const res = (entry.response ?? {}) as Record<string, unknown>;
   const url = String(req.url ?? "");
   if (!url) return null;
   const { origin, path, query } = splitUrl(url);
-  const postData = req.postData as { text?: string } | undefined;
-  const content = res.content as { text?: string } | undefined;
+  const postData = req.postData as { text?: string; encoding?: string; base64?: boolean | string } | undefined;
+  const content = res.content as { text?: string; encoding?: string; base64?: boolean | string } | undefined;
   const started = String(entry.startedDateTime ?? "");
   const startedAt = started ? Date.parse(started) : Date.now();
-  const requestHeaders = headersFromObject(req.headers);
-  const responseHeaders = headersFromObject(res.headers);
+  let requestHeaders = headersFromObject(req.headers);
+  let responseHeaders = headersFromObject(res.headers);
+
+  const reqCookies = req.cookies as { name?: string; value?: string }[] | undefined;
+  if (Array.isArray(reqCookies) && reqCookies.length && !headerValue(requestHeaders, "cookie")) {
+    const ck = reqCookies
+      .filter((c) => c?.name)
+      .map((c) => `${c.name}=${c.value ?? ""}`)
+      .join("; ");
+    if (ck) requestHeaders = [...requestHeaders, { name: "Cookie", value: ck }];
+  }
+  const resCookies = res.cookies as
+    | { name?: string; value?: string; httpOnly?: boolean; secure?: boolean; sameSite?: string; path?: string }[]
+    | undefined;
+  if (Array.isArray(resCookies) && resCookies.length && !headerValues(responseHeaders, "set-cookie").length) {
+    for (const c of resCookies) {
+      if (!c?.name) continue;
+      const parts = [`${c.name}=${c.value ?? ""}`];
+      if (c.path) parts.push(`Path=${c.path}`);
+      if (c.httpOnly) parts.push("HttpOnly");
+      if (c.secure) parts.push("Secure");
+      if (c.sameSite) parts.push(`SameSite=${c.sameSite}`);
+      responseHeaders = [...responseHeaders, { name: "Set-Cookie", value: parts.join("; ") }];
+    }
+  }
+
   return {
     id: nid(actor),
     actor,
@@ -50,11 +97,11 @@ function fromHarEntry(entry: Record<string, unknown>, actor: ActorId): CapturedR
     template: templatize(path),
     query,
     requestHeaders,
-    requestBody: postData?.text,
+    requestBody: harText(postData),
     status: Number(res.status ?? 0),
     statusText: String(res.statusText ?? ""),
     responseHeaders,
-    responseBody: content?.text,
+    responseBody: harText(content),
     timeMs: Number(entry.time ?? 0),
   };
 }
