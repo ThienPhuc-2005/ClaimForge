@@ -1,3 +1,10 @@
+## 2026-08-30 — P1.1 merged to main
+
+- Squash-merged PR #1 at HEAD `ed7f913` → `main` `fa21439` (`feat(p1): add tenant isolation kernel`).
+- Pre-merge check: PR head still `ed7f913`; CI run 23 belonged to that SHA.
+- CI on `main` run 24 green: 418 tests / 414 pass / 4 skip / 0 fail; typecheck, lint, audit:deps, build.
+- Not started: P1.2.
+
 ## 2026-08-30 — P1.1 post-mint authority + Team projection
 
 - Independent review reproduced cross-tenant list/get/collab/addMember/delete by mutating `TenantContext.tenantId` or copying the brand symbol on `f3f7878`.

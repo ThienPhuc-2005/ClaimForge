@@ -1,10 +1,10 @@
 # Test status
 
-- **When:** P1.1 persist/context hardening (this session)
-- **Branch:** `feat/p1-isolation-kernel` (do not treat this file as recording its own SHA)
-- **Compared against:** `f1ed912` (`main`)
-- **Commands (local, GitHub-checkout shape with materialized `.grok/app-env.json`):**
-  - `npm test` → **412 tests / 408 pass / 4 skip / 0 fail**
+- **When:** P1.1 squash on `main` (`fa21439`)
+- **Branch:** `main`
+- **Compared against:** `f1ed912` (pre-P1.1 `main`)
+- **Commands (GitHub Actions run 24 on `fa21439`):**
+  - `npm test` → **418 tests / 414 pass / 4 skip / 0 fail**
   - `npm run typecheck` → pass
   - `npm run lint` → pass
   - `npm run audit:deps` → 0 vulnerabilities (`--audit-level=high`)
