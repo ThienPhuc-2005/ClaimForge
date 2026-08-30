@@ -74,13 +74,16 @@ An attacker must not:
 - Turn an unverified JWT (`alg=none`, HS*, wrong iss/aud/nonce/exp) into a `TenantContext`.
 - Supply `tenant_id` or `role` in the ID token to switch tenant or escalate.
 - JIT-create a `team_member` by presenting a new `sub`.
-- Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use).
+- Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use; consume deletes the row).
+- Grow `team_oidc_pending` without bound by spamming login with random slugs (expired rows are swept; table is capped by evicting oldest; not a slug oracle).
 - Read a raw session token or ID/access/refresh token from the database.
 - Use a session after the member row is deleted.
 - Start Team OIDC on HTTP (or spoof HTTPS via `X-Forwarded-Proto` without a trusted-proxy flag) or without a syntactically valid tenant slug.
 - Learn whether a tenant slug exists from login status (valid slugs all 302; existence is fail-closed at callback).
-- Point token/JWKS fetch at an unallowlisted or private host (SSRF).
+- Point token/JWKS fetch at an unallowlisted or private host (SSRF), or force the RP to buffer an oversized JWKS/token body.
 - CSRF-logout a session from another origin.
+
+`CLAIMFORGE_TEAM_TRUST_PROXY` is only safe when a trusted reverse proxy strips or overwrites client-supplied `X-Forwarded-Proto`. Otherwise a caller can spoof HTTPS and receive a `__Host-` cookie on a cleartext request.
 
 The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque token in transit; only its SHA-256 is stored. Logout revokes that local session only — it does not call the IdP. DNS rebinding remains a known P0.6 residual (fetch cannot pin resolved IPs).
 

@@ -1,5 +1,6 @@
 -- P1.2 OIDC pending + opaque tenant-bound sessions.
 -- Does not modify 0003. No OIDC secrets, raw tokens, or audit tables.
+-- Pending rows are deleted on consume; expired rows are swept; table is capped in app code.
 
 CREATE TABLE team_oidc_pending (
   state_hash TEXT PRIMARY KEY,
@@ -9,11 +10,11 @@ CREATE TABLE team_oidc_pending (
   redirect_uri TEXT NOT NULL,
   tenant_slug TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
-  consumed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX team_oidc_pending_expires_idx ON team_oidc_pending (expires_at);
+CREATE INDEX team_oidc_pending_created_idx ON team_oidc_pending (created_at);
 
 CREATE TABLE team_session (
   id TEXT PRIMARY KEY,

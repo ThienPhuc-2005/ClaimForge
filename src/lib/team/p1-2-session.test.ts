@@ -90,6 +90,8 @@ test("pending stores hashed state and encrypted verifier, consume is single-use"
   const pending = await consumeOidcPending(sql, config, secrets.state, now);
   assert.equal(pending.verifier, secrets.verifier);
   assert.equal(pending.nonce, secrets.nonce);
+  const leftover = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_oidc_pending");
+  assert.equal(leftover[0]?.n, "0");
   await assert.rejects(() => consumeOidcPending(sql, config, secrets.state, now));
 });
 

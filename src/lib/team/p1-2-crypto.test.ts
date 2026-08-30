@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { fetchJwksDocument } from "../claimforge/jwks-fetch.ts";
 import { inspectTeamOidcEnv, loadTeamOidcConfig, oidcClientSecret, oidcSealKey, redactedOidcConfig } from "./oidc-config.ts";
 import { verifyTeamIdToken } from "./oidc-id-token.ts";
 import { fetchTeamJwks, resetTeamJwksCache, TEAM_JWKS_TTL_MS } from "./oidc-jwks.ts";
@@ -239,6 +240,30 @@ test("token POST stops reading when the body exceeds the size cap", async () => 
     TeamAuthError,
   );
   assert.equal(fetched, 1);
+});
+
+test("JWKS fetch stops reading when the body exceeds the size cap", async () => {
+  let pulled = 0;
+  const cap = 1024;
+  const fetchImpl = (async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled === 1) controller.enqueue(new Uint8Array(cap));
+        else {
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  await assert.rejects(
+    () => fetchJwksDocument("https://idp.example/jwks", { confirmed: true, fetchImpl, maxBytes: cap }),
+    /exceeds/,
+  );
+  assert.equal(pulled, 2);
+  assert.ok(pulled < 8);
 });
 
 async function rsaKid(kid: string) {

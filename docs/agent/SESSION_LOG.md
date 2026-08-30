@@ -1,3 +1,10 @@
+## 2026-08-30 — P1.2-R2 pending bound + stream-capped JWKS
+
+- Consume pending with `DELETE ... RETURNING`; sweep expired; cap 256 by evicting oldest. Login spam is not a slug oracle. Replay still 401.
+- Shared `readCappedBody` stream-caps JWKS GET and token POST (cancel at size cap; no `arrayBuffer` then check).
+- `CLAIMFORGE_TEAM_TRUST_PROXY` is only safe when a trusted reverse proxy strips or overwrites client `X-Forwarded-Proto`.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
 ## 2026-08-30 — P1.2-R1 review blockers
 
 - Stream-capped token POST body (no `arrayBuffer` then size check). Audit action `token-exchange`.

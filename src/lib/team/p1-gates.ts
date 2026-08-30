@@ -395,7 +395,7 @@ export const P1_GATES: P1Gate[] = [
     p1: "P1.2",
     bug: "Authorization callback state was reusable",
     before: "Second callback with the same state minted another session",
-    after: "consumed_at makes replay 401",
+    after: "DELETE RETURNING removes the row; replay is 401",
     evidenceTest: "p1-2-adversarial.test.ts:consumed OIDC state cannot be replayed",
   },
   {
@@ -493,6 +493,22 @@ export const P1_GATES: P1Gate[] = [
     before: "await res.arrayBuffer() then compare byteLength",
     after: "Stream read; stop and cancel as soon as maxBytes is exceeded",
     evidenceTest: "p1-2-crypto.test.ts:token POST stops reading when the body exceeds the size cap",
+  },
+  {
+    id: "P1.2-pending-bound",
+    p1: "P1.2",
+    bug: "GET /oidc/login with random slugs grew team_oidc_pending without bound; consumed rows stayed forever",
+    before: "INSERT on every login; consume only set consumed_at",
+    after: "Consume DELETE RETURNING; expired rows swept; table capped at 256 by evicting oldest; valid slugs still all 302",
+    evidenceTest: "p1-2-adversarial.test.ts:pending rows are bounded and consumed rows are deleted",
+  },
+  {
+    id: "P1.2-jwks-size-stream",
+    p1: "P1.2",
+    bug: "JWKS GET was fully buffered with arrayBuffer before the size check",
+    before: "await res.arrayBuffer() then compare byteLength",
+    after: "Shared readCappedBody stream-reads and cancels as soon as JWKS_MAX_BYTES is exceeded",
+    evidenceTest: "p1-2-crypto.test.ts:JWKS fetch stops reading when the body exceeds the size cap",
   },
 ];
 

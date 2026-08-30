@@ -15,6 +15,8 @@ import {
   handleTeamSession,
 } from "./oidc-http.ts";
 import { resetTeamJwksCache } from "./oidc-jwks.ts";
+import { consumeOidcPending, insertOidcPending, OIDC_PENDING_MAX_ROWS, OIDC_PENDING_TTL_MS } from "./oidc-pending.ts";
+import { hashOidcState, newOidcLoginSecrets } from "./oidc-pkce.ts";
 import { oidcUserKey } from "./oidc-user-key.ts";
 import { bootstrapTenant } from "./repo.ts";
 import { wrapPglite } from "./sql.ts";
@@ -175,6 +177,71 @@ test("valid unknown slug is indistinguishable from a live tenant at login", asyn
   assert.equal(liveLoc.origin + liveLoc.pathname, ghostLoc.origin + ghostLoc.pathname);
   const tenants = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_tenant");
   assert.equal(tenants[0]?.n, "1");
+});
+
+test("pending rows are bounded and consumed rows are deleted", async () => {
+  const { sql } = await openP12();
+  const config = loadTeamOidcConfig(testEnv());
+  const t0 = new Date("2026-08-30T10:00:00.000Z");
+  const oldSecrets = newOidcLoginSecrets();
+  await insertOidcPending(sql, config, { ...oldSecrets, slug: "oldxx", now: t0 });
+
+  const later = new Date(t0.getTime() + 1_000);
+  for (let i = 0; i < OIDC_PENDING_MAX_ROWS; i += 1) {
+    const slug = `s${i.toString(36).padStart(4, "0")}`;
+    const res = await handleTeamOidcLogin(new Request(`https://app.example/api/team/oidc/login?slug=${slug}`), {
+      sql,
+      config,
+      now: later,
+    });
+    assert.equal(res.status, 302);
+  }
+  const full = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_oidc_pending");
+  assert.equal(Number(full[0]?.n), OIDC_PENDING_MAX_ROWS);
+  const oldGone = await sql.query("SELECT 1 FROM team_oidc_pending WHERE state_hash = $1", [
+    hashOidcState(oldSecrets.state),
+  ]);
+  assert.equal(oldGone.length, 0);
+  await assert.rejects(() => consumeOidcPending(sql, config, oldSecrets.state, later));
+
+  const live = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=acme"), {
+    sql,
+    config,
+    now: later,
+  });
+  const ghost = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=nope"), {
+    sql,
+    config,
+    now: later,
+  });
+  assert.equal(live.status, 302);
+  assert.equal(ghost.status, 302);
+  const capped = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_oidc_pending");
+  assert.equal(Number(capped[0]?.n), OIDC_PENDING_MAX_ROWS);
+
+  const keep = newOidcLoginSecrets();
+  await insertOidcPending(sql, config, { ...keep, slug: "keep", now: later });
+  const pending = await consumeOidcPending(sql, config, keep.state, later);
+  assert.equal(pending.slug, "keep");
+  const afterConsume = await sql.query<{ n: string; hash?: string }>(
+    "SELECT COUNT(*)::text AS n FROM team_oidc_pending",
+  );
+  assert.equal(Number(afterConsume[0]?.n), OIDC_PENDING_MAX_ROWS - 1);
+  const consumedGone = await sql.query("SELECT 1 FROM team_oidc_pending WHERE state_hash = $1", [
+    hashOidcState(keep.state),
+  ]);
+  assert.equal(consumedGone.length, 0);
+  await assert.rejects(() => consumeOidcPending(sql, config, keep.state, later));
+
+  const expSecrets = newOidcLoginSecrets();
+  await insertOidcPending(sql, config, { ...expSecrets, slug: "expx", now: later });
+  const afterTtl = new Date(later.getTime() + OIDC_PENDING_TTL_MS + 1);
+  const next = newOidcLoginSecrets();
+  await insertOidcPending(sql, config, { ...next, slug: "next", now: afterTtl });
+  const expiredGone = await sql.query("SELECT 1 FROM team_oidc_pending WHERE state_hash = $1", [
+    hashOidcState(expSecrets.state),
+  ]);
+  assert.equal(expiredGone.length, 0);
 });
 
 test("ID token tenant_id and role claims cannot switch tenant", async () => {

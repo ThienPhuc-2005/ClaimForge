@@ -1,7 +1,9 @@
 import {
   auditWithoutSecrets,
+  CappedBodyError,
   fetchJwksDocument,
   inspectJwksUrl,
+  readCappedBody,
   type InspectJwksUrl,
   type JwksAudit,
   JWKS_MAX_BYTES,
@@ -47,44 +49,15 @@ function tokenAudit(
   });
 }
 
-/** Read a response body from the stream and abort as soon as it exceeds `maxBytes`. */
-export async function readCappedBody(res: Response, maxBytes: number): Promise<Uint8Array> {
-  const declared = res.headers.get("content-length");
-  if (declared) {
-    const n = Number(declared);
-    if (Number.isFinite(n) && n > maxBytes) {
-      if (res.body) await res.body.cancel().catch(() => undefined);
+async function readTokenBody(res: Response, maxBytes: number): Promise<Uint8Array> {
+  try {
+    return await readCappedBody(res, maxBytes);
+  } catch (err) {
+    if (err instanceof CappedBodyError || err instanceof TeamAuthError) {
       throw new TeamAuthError("token endpoint rejected the request");
     }
+    throw err;
   }
-  if (!res.body) {
-    throw new TeamAuthError("token endpoint rejected the request");
-  }
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value || value.byteLength === 0) continue;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        throw new TeamAuthError("token endpoint rejected the request");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
 }
 
 export async function postTeamOutbound(
@@ -129,7 +102,10 @@ export async function postTeamOutbound(
     if (!contentTypeJson(res.headers.get("content-type"))) {
       throw new TeamAuthError("token endpoint rejected the request");
     }
-    const buf = await readCappedBody(res, maxBytes);
+    if (!res.body) {
+      throw new TeamAuthError("token endpoint rejected the request");
+    }
+    const buf = await readTokenBody(res, maxBytes);
     let json: unknown;
     try {
       json = JSON.parse(new TextDecoder().decode(buf));

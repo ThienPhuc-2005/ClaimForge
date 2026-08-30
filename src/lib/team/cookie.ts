@@ -35,6 +35,10 @@ export function trustProxyEnabled(env: Record<string, string | undefined> = proc
 /**
  * HTTPS is the request URL protocol. `X-Forwarded-Proto` is ignored unless
  * `CLAIMFORGE_TEAM_TRUST_PROXY` is explicitly enabled.
+ *
+ * That flag is only safe when a trusted reverse proxy strips or overwrites
+ * client-supplied `X-Forwarded-Proto`. Otherwise a caller can spoof HTTPS
+ * and receive a `__Host-` session cookie on a cleartext request.
  */
 export function requestIsHttps(
   request: Request,
