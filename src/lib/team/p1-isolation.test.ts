@@ -20,6 +20,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   getCollab,
+  getTenant,
   getWorkspace,
   listMembers,
   listWorkspaces,
@@ -141,8 +142,12 @@ test("no public factory turns a member object into TenantContext", async () => {
   for (const file of files) {
     const src = readFileSync(join(here, file), "utf8");
     assert.equal(/\bexport\s+(async\s+)?function\s+contextFromMember\b/.test(src), false, file);
+    assert.equal(/\bexport\s+const\s+contextFromMember\b/.test(src), false, file);
+    assert.equal(/\bexport\s+default\b[^;]*\bcontextFromMember\b/.test(src), false, file);
     assert.equal(/\bexport\s*\{[^}]*\bcontextFromMember\b/.test(src), false, file);
     assert.equal(/\bexport\s+(async\s+)?function\s+tenantContextFromDbRow\b/.test(src), false, file);
+    assert.equal(/\bexport\s+const\s+tenantContextFromDbRow\b/.test(src), false, file);
+    assert.equal(/\bexport\s*\{[^}]*\btenantContextFromDbRow\b/.test(src), false, file);
   }
   const { sql } = await openKernel();
   const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
@@ -367,7 +372,14 @@ test("deep-redacted ReportDTO from the solo engine is persistable", async () => 
   const saved = await updateWorkspaceCollab(sql, a.context, ws.id, { reportDto: dto });
   assert.notEqual(saved.reportDto, dto);
   assert.equal((saved.reportDto as { secrets: string }).secrets, "redacted");
-  assert.ok(Array.isArray((saved.reportDto as { replays: unknown[] }).replays));
+  const replays = (saved.reportDto as { replays: { raw: string; curl: string }[] }).replays;
+  assert.ok(Array.isArray(replays));
+  for (const replay of replays) {
+    assert.equal(replay.raw, "[redacted]");
+    assert.equal(replay.curl, "[redacted]");
+  }
+  const loot = (saved.reportDto as { loot: { value: string }[] }).loot;
+  for (const item of loot) assert.equal(item.value, "[redacted]");
 });
 
 test("tampered collab row is rejected on read", async () => {
@@ -442,4 +454,183 @@ test("addMember stays inside verified tenant", async () => {
   const members = await listMembers(sql, a.context);
   assert.ok(members.some((m) => m.userKey === "carol"));
   assert.equal((await listMembers(sql, b.context)).some((m) => m.userKey === "carol"), false);
+});
+
+test("mutated tenantId on a branded context cannot access another tenant", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const b = await bootstrapTenant(sql, operator(), { slug: "beta", name: "Beta", ownerUserKey: "bob" });
+  const wsB = await createWorkspace(sql, b.context, { name: "beta-desk" });
+  await updateWorkspaceCollab(sql, b.context, wsB.id, { policy: DEFAULT_POLICY });
+  assert.equal(Object.isFrozen(a.context), true);
+  assert.throws(() => {
+    (a.context as { tenantId: string }).tenantId = b.tenant.id;
+  }, TypeError);
+  assert.throws(() => {
+    (a.context as { userKey: string }).userKey = "bob";
+  }, TypeError);
+  assert.throws(() => {
+    (a.context as { role: string }).role = "viewer";
+  }, TypeError);
+  assert.equal(a.context.tenantId, a.tenant.id);
+  assert.deepEqual(await listWorkspaces(sql, a.context), []);
+  await assert.rejects(() => getWorkspace(sql, a.context, wsB.id), TeamNotFoundError);
+  await assert.rejects(() => getCollab(sql, a.context, wsB.id), TeamNotFoundError);
+  await assert.rejects(() => deleteWorkspace(sql, a.context, wsB.id), TeamNotFoundError);
+  await addMember(sql, a.context, { userKey: "mallory", role: "viewer" });
+  assert.equal((await listMembers(sql, b.context)).some((m) => m.userKey === "mallory"), false);
+  assert.equal((await listMembers(sql, a.context)).some((m) => m.userKey === "mallory"), true);
+  assert.equal((await getWorkspace(sql, b.context, wsB.id)).id, wsB.id);
+  assert.ok((await getCollab(sql, b.context, wsB.id))?.policy);
+});
+
+test("symbol copied onto a new object is rejected", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const b = await bootstrapTenant(sql, operator(), { slug: "beta", name: "Beta", ownerUserKey: "bob" });
+  const wsB = await createWorkspace(sql, b.context, { name: "beta-desk" });
+  const brand = Object.getOwnPropertySymbols(a.context)[0]!;
+  const forged = { [brand]: true, tenantId: b.tenant.id, userKey: "bob", role: "owner" } as TenantContext;
+  await assert.rejects(() => listWorkspaces(sql, forged), TeamIsolationError);
+  await assert.rejects(() => getWorkspace(sql, forged, wsB.id), TeamIsolationError);
+  await assert.rejects(() => getCollab(sql, forged, wsB.id), TeamIsolationError);
+  await assert.rejects(() => listMembers(sql, forged), TeamIsolationError);
+  await assert.rejects(() => addMember(sql, forged, { userKey: "mallory", role: "owner" }), TeamIsolationError);
+  await assert.rejects(() => deleteWorkspace(sql, forged, wsB.id), TeamIsolationError);
+  await assert.rejects(() => getTenant(sql, forged), TeamIsolationError);
+  assert.equal((await getWorkspace(sql, b.context, wsB.id)).id, wsB.id);
+  assert.equal((await listMembers(sql, b.context)).some((m) => m.userKey === "mallory"), false);
+});
+
+test("revoked member context cannot be reused", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  await createWorkspace(sql, a.context, { name: "desk" });
+  await addMember(sql, a.context, { userKey: "carol", role: "analyst" });
+  const carol = await resolveTenantContext(sql, "carol", a.tenant.id);
+  const before = (await listWorkspaces(sql, carol)).length;
+  assert.equal(before, 1);
+  await sql.query("DELETE FROM team_member WHERE tenant_id = $1 AND user_key = $2", [a.tenant.id, "carol"]);
+  await assert.rejects(() => listWorkspaces(sql, carol), TeamNotFoundError);
+  await assert.rejects(() => getTenant(sql, carol), TeamNotFoundError);
+  await assert.rejects(() => addMember(sql, carol, { userKey: "dave", role: "viewer" }), TeamNotFoundError);
+  assert.equal((await listWorkspaces(sql, a.context)).length, 1);
+  assert.equal((await listMembers(sql, a.context)).some((m) => m.userKey === "carol"), false);
+  assert.equal((await listMembers(sql, a.context)).some((m) => m.userKey === "dave"), false);
+});
+
+test("copied BootstrapActor cannot unlock tenant creation", async () => {
+  const { sql } = await openKernel();
+  const actor = operator();
+  assert.equal(Object.isFrozen(actor), true);
+  const brand = Object.getOwnPropertySymbols(actor)[0]!;
+  const fake = { [brand]: true, label: "operator" };
+  await assert.rejects(
+    () => bootstrapTenant(sql, fake as never, { slug: "gamma", name: "Gamma", ownerUserKey: "eve" }),
+    TeamBootstrapError,
+  );
+  assert.throws(() => {
+    (actor as { label: string }).label = "attacker";
+  }, TypeError);
+});
+
+test("team projection strips loot and replay credentials from stored JSON", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const ws = await createWorkspace(sql, a.context, { name: "desk" });
+  const secret = "supersecretpassword";
+  const aws = "AKIAIOSFODNN7EXAMPLE";
+  const saved = await updateWorkspaceCollab(sql, a.context, ws.id, {
+    reportDto: {
+      ...DTO,
+      loot: [
+        { kind: "note", severity: "low", label: "pw", value: secret, where: "body", actor: "A" },
+        { kind: "key", severity: "high", label: "aws", value: aws, where: "env", actor: "B" },
+      ],
+      replays: [
+        {
+          id: "r1",
+          title: "login",
+          severity: "low",
+          note: "n",
+          curl: "curl -u alice:supersecret http://lab.test/me",
+          raw: "GET /me HTTP/1.1\r\nHost: lab.test\r\nAuthorization: Basic dXNlcjpwYXNz\r\nCookie: session=live-secret\r\n\r\n",
+        },
+        {
+          id: "r2",
+          title: "user",
+          severity: "low",
+          note: "n",
+          curl: "curl --user bob:hunter2 http://lab.test/me",
+          raw: "GET / HTTP/1.1\r\nHost: x\r\n\r\n",
+        },
+      ],
+    },
+  });
+  const json = JSON.stringify(saved.reportDto);
+  assert.equal(json.includes(secret), false);
+  assert.equal(json.includes(aws), false);
+  assert.equal(json.includes("supersecret"), false);
+  assert.equal(json.includes("hunter2"), false);
+  assert.equal(json.includes("live-secret"), false);
+  assert.equal(json.includes("dXNlcjpwYXNz"), false);
+  assert.equal(json.includes("curl -u"), false);
+  const stored = await sql.query<{ report_dto_json: string }>(
+    "SELECT report_dto_json FROM team_workspace_collab WHERE tenant_id = $1 AND workspace_id = $2",
+    [a.tenant.id, ws.id],
+  );
+  const rawJson = stored[0]?.report_dto_json ?? "";
+  assert.equal(rawJson.includes(secret), false);
+  assert.equal(rawJson.includes(aws), false);
+  assert.equal(rawJson.includes("hunter2"), false);
+  assert.equal(rawJson.includes("live-secret"), false);
+  const loot = (saved.reportDto as { loot: { value: string }[] }).loot;
+  assert.ok(loot.length >= 2);
+  for (const item of loot) assert.equal(item.value, "[redacted]");
+  const replays = (saved.reportDto as { replays: { raw: string; curl: string }[] }).replays;
+  for (const replay of replays) {
+    assert.equal(replay.raw, "[redacted]");
+    assert.equal(replay.curl, "[redacted]");
+  }
+});
+
+test("live credential canaries still reject secrets outside the projection holes", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const ws = await createWorkspace(sql, a.context, { name: "desk" });
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, why: "curl -u alice:supersecret http://x" }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, title: "AKIAIOSFODNN7EXAMPLE" }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, how: "Authorization: Basic dXNlcjpwYXNz" }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, evidence: ["Cookie: session=live-secret"] }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, why: "curl --user bob:hunter2 http://x" }] },
+      }),
+    TeamPersistError,
+  );
 });

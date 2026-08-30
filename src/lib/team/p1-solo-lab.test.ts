@@ -23,14 +23,17 @@ test("team sources do not import platform auth", () => {
     "../auth/middleware",
     "../auth/verify.server",
   ];
+  const importRe = /(?:import(?:\s+type)?(?:[\s\S]*?from)?\s*|import\s*\(|require\s*\()\s*['"][^'"]+/g;
   for (const file of files) {
     const src = readFileSync(join(teamDir, file), "utf8");
-    const imports = src
-      .split("\n")
-      .filter((line) => /^\s*import\b/.test(line))
-      .join("\n");
+    const importLike = (src.match(importRe) ?? []).join("\n");
     for (const token of banned) {
-      assert.equal(imports.includes(token), false, `${file} imports ${token}`);
+      assert.equal(importLike.includes(token), false, `${file} imports ${token}`);
+    }
+    if (!file.startsWith("p1-")) {
+      for (const token of banned) {
+        assert.equal(src.includes(token), false, `${file} mentions ${token}`);
+      }
     }
   }
 });

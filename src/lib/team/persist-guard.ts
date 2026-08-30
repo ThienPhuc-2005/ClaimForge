@@ -27,9 +27,15 @@ export const TEAM_LIMITS = {
   base64Run: 4_096,
 } as const;
 
+const REDACTED = "[redacted]" as const;
+
 const COMPACT_JWT = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/;
 const PEM_PRIVATE = /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/;
 const BEARER = /\bBearer\s+(?!\[redacted\])\S+/i;
+const BASIC = /\bBasic\s+(?!\[redacted\])\S+/i;
+const COOKIE_LINE = /(?:^|[\r\n])(?:Cookie|Set-Cookie):\s*(?!\[redacted\]\s*$)/im;
+const CURL_USER = /(?:^|\s)(?:-u|--user)\s+(?!\[redacted\])\S+/;
+const AWS_ACCESS_KEY = /\bAKIA[0-9A-Z]{16}\b/;
 const HTTP_REQUEST = /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\s+\S+\s+HTTP\/\d/im;
 const BASE64_RUN = /[A-Za-z0-9+/]{4096,}={0,2}/;
 const API_KEY_ASSIGN = /\bapi[_-]?key\s*[:=]\s*(?!\[redacted\])\S+/i;
@@ -78,8 +84,6 @@ const POLICY_KEYS = new Set([
 ]);
 
 const COLLAB_KEYS = new Set(["policy", "review", "reportDto"]);
-
-const HTTP_ALLOWED_PATH = /(?:^|\.)replays\[\d+\]\.(?:raw|curl)$/;
 
 const SEVERITY = z.enum(["critical", "high", "medium", "low", "info"]);
 const CONFIDENCE = z.enum(["observation", "suspicion", "confirmed"]);
@@ -130,160 +134,165 @@ const FindingSchema = z.strictObject({
   missingEvidence: strList(64),
 });
 
-const ReportDtoSchema = z.strictObject({
-  schemaVersion: z.literal(REPORT_SCHEMA_VERSION),
-  tool: z.literal("ClaimForge"),
-  secrets: z.literal("redacted"),
-  generated: short,
-  engineVersion: short,
-  ruleVersion: short,
-  policyVersion: short,
-  inputHash: short,
-  resultHash: short,
-  actors: z.strictObject({ A: short, B: short }),
-  findings: z.array(FindingSchema).max(TEAM_LIMITS.reportItems),
-  diffs: z
-    .array(
-      z.strictObject({
-        method: short,
-        template: str(),
-        aStatuses: numList(32),
-        bStatuses: numList(32),
-        verdict: short,
-        note: str(),
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  timeline: z
-    .array(
-      z.strictObject({
-        at: z.number().finite(),
+const lootSchema = (value: z.ZodType) =>
+  z.strictObject({
+    kind: short,
+    severity: short,
+    label: str(),
+    value,
+    where: str(),
+    actor: ACTOR,
+  });
+
+const replaySchema = (blob: z.ZodType) =>
+  z.strictObject({
+    id: short,
+    title: str(),
+    severity: short,
+    note: str(),
+    curl: blob,
+    raw: blob,
+    credentialSource: z
+      .strictObject({
         actor: short,
-        kind: short,
-        label: str(),
-        detail: str(),
-      }),
-    )
-    .max(TEAM_LIMITS.wordlistItems),
-  jwts: z
-    .array(
-      z.strictObject({
-        actor: short,
-        alg: short.optional(),
-        parts: z.number().int().nonnegative(),
-        sigStatus: short,
-        issues: strList(32),
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  cookies: z
-    .array(
-      z.strictObject({
-        actor: short,
-        name: short,
-        flags: CookieFlagsSchema,
-        issues: strList(32),
-        source: short,
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  graph: z.strictObject({
-    nodes: z
+        kinds: strList(16, 64),
+      })
+      .optional(),
+    strippedHeaders: strList(64, TEAM_LIMITS.shortChars).optional(),
+    headerDiff: z
       .array(
         z.strictObject({
-          id: short,
-          kind: short,
-          label: str(),
-          bola: z.boolean(),
+          name: short,
+          before: str(),
+          after: str(),
+        }),
+      )
+      .max(64)
+      .optional(),
+  });
+
+function reportDtoShape(lootValue: z.ZodType, replayBlob: z.ZodType) {
+  return z.strictObject({
+    schemaVersion: z.literal(REPORT_SCHEMA_VERSION),
+    tool: z.literal("ClaimForge"),
+    secrets: z.literal("redacted"),
+    generated: short,
+    engineVersion: short,
+    ruleVersion: short,
+    policyVersion: short,
+    inputHash: short,
+    resultHash: short,
+    actors: z.strictObject({ A: short, B: short }),
+    findings: z.array(FindingSchema).max(TEAM_LIMITS.reportItems),
+    diffs: z
+      .array(
+        z.strictObject({
+          method: short,
+          template: str(),
+          aStatuses: numList(32),
+          bStatuses: numList(32),
+          verdict: short,
+          note: str(),
         }),
       )
       .max(TEAM_LIMITS.reportItems),
-    edges: z
+    timeline: z
       .array(
         z.strictObject({
-          from: short,
-          to: short,
+          at: z.number().finite(),
+          actor: short,
           kind: short,
-          bola: z.boolean(),
+          label: str(),
+          detail: str(),
         }),
       )
-      .max(TEAM_LIMITS.graphEdges),
-  }),
-  loot: z
-    .array(
-      z.strictObject({
-        kind: short,
-        severity: short,
-        label: str(),
-        value: str(),
-        where: str(),
-        actor: ACTOR,
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  wordlists: z.strictObject({
-    ids: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
-    emails: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
-    roles: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
-    hosts: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
-  }),
-  paths: z
-    .array(
-      z.strictObject({
-        id: short,
-        title: str(),
-        objective: str(),
-        steps: strList(64),
-        findingIds: strList(64, TEAM_LIMITS.shortChars),
-      }),
-    )
-    .max(TEAM_LIMITS.listItems),
-  replays: z
-    .array(
-      z.strictObject({
-        id: short,
-        title: str(),
-        severity: short,
-        note: str(),
-        curl: str(),
-        raw: str(),
-        credentialSource: z
-          .strictObject({
-            actor: short,
-            kinds: strList(16, 64),
-          })
-          .optional(),
-        strippedHeaders: strList(64, TEAM_LIMITS.shortChars).optional(),
-        headerDiff: z
-          .array(
-            z.strictObject({
-              name: short,
-              before: str(),
-              after: str(),
-            }),
-          )
-          .max(64)
-          .optional(),
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  surface: z
-    .array(
-      z.strictObject({
-        method: short,
-        template: str(),
-        hosts: strList(32, TEAM_LIMITS.shortChars),
-        statuses: numList(32),
-        actors: strList(8, 8),
-        auth: z.boolean(),
-      }),
-    )
-    .max(TEAM_LIMITS.reportItems),
-  redaction: z.strictObject({
-    dropped: strList(64, TEAM_LIMITS.shortChars),
-    preview: strList(64),
-  }),
-});
+      .max(TEAM_LIMITS.wordlistItems),
+    jwts: z
+      .array(
+        z.strictObject({
+          actor: short,
+          alg: short.optional(),
+          parts: z.number().int().nonnegative(),
+          sigStatus: short,
+          issues: strList(32),
+        }),
+      )
+      .max(TEAM_LIMITS.reportItems),
+    cookies: z
+      .array(
+        z.strictObject({
+          actor: short,
+          name: short,
+          flags: CookieFlagsSchema,
+          issues: strList(32),
+          source: short,
+        }),
+      )
+      .max(TEAM_LIMITS.reportItems),
+    graph: z.strictObject({
+      nodes: z
+        .array(
+          z.strictObject({
+            id: short,
+            kind: short,
+            label: str(),
+            bola: z.boolean(),
+          }),
+        )
+        .max(TEAM_LIMITS.reportItems),
+      edges: z
+        .array(
+          z.strictObject({
+            from: short,
+            to: short,
+            kind: short,
+            bola: z.boolean(),
+          }),
+        )
+        .max(TEAM_LIMITS.graphEdges),
+    }),
+    loot: z.array(lootSchema(lootValue)).max(TEAM_LIMITS.reportItems),
+    wordlists: z.strictObject({
+      ids: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
+      emails: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
+      roles: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
+      hosts: strList(TEAM_LIMITS.wordlistItems, TEAM_LIMITS.shortChars),
+    }),
+    paths: z
+      .array(
+        z.strictObject({
+          id: short,
+          title: str(),
+          objective: str(),
+          steps: strList(64),
+          findingIds: strList(64, TEAM_LIMITS.shortChars),
+        }),
+      )
+      .max(TEAM_LIMITS.listItems),
+    replays: z.array(replaySchema(replayBlob)).max(TEAM_LIMITS.reportItems),
+    surface: z
+      .array(
+        z.strictObject({
+          method: short,
+          template: str(),
+          hosts: strList(32, TEAM_LIMITS.shortChars),
+          statuses: numList(32),
+          actors: strList(8, 8),
+          auth: z.boolean(),
+        }),
+      )
+      .max(TEAM_LIMITS.reportItems),
+    redaction: z.strictObject({
+      dropped: strList(64, TEAM_LIMITS.shortChars),
+      preview: strList(64),
+    }),
+  });
+}
+
+const ReportDtoSchema = reportDtoShape(str(), str());
+const TeamReportDtoSchema = reportDtoShape(z.literal(REDACTED), z.literal(REDACTED));
+
+type ReportDtoInput = z.infer<typeof ReportDtoSchema>;
 
 function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
@@ -328,12 +337,14 @@ function scanValue(value: unknown, path: string): void {
     if (COMPACT_JWT.test(value)) fail(`forbidden compact JWT at ${path}`);
     if (PEM_PRIVATE.test(value)) fail(`forbidden private key at ${path}`);
     if (BEARER.test(value)) fail(`forbidden bearer token at ${path}`);
+    if (BASIC.test(value)) fail(`forbidden basic credential at ${path}`);
+    if (COOKIE_LINE.test(value)) fail(`forbidden cookie header at ${path}`);
+    if (CURL_USER.test(value)) fail(`forbidden curl user at ${path}`);
+    if (AWS_ACCESS_KEY.test(value)) fail(`forbidden aws access key at ${path}`);
     if (API_KEY_ASSIGN.test(value)) fail(`forbidden api_key at ${path}`);
     if (SESSION_SECRET_ASSIGN.test(value)) fail(`forbidden sessionSecret at ${path}`);
     if (BASE64_RUN.test(value)) fail(`oversize Base64 at ${path}`);
-    if (!HTTP_ALLOWED_PATH.test(path) && HTTP_REQUEST.test(value)) {
-      fail(`forbidden raw HTTP at ${path}`);
-    }
+    if (HTTP_REQUEST.test(value)) fail(`forbidden raw HTTP at ${path}`);
     return;
   }
   if (typeof value === "number" || typeof value === "boolean") return;
@@ -360,6 +371,74 @@ function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, label: string): T
   const result = schema.safeParse(value);
   if (!result.success) fail(`${label} failed schema`);
   return result.data;
+}
+
+function projectTeamReportDto(dto: ReportDtoInput) {
+  return {
+    schemaVersion: dto.schemaVersion,
+    tool: dto.tool,
+    secrets: dto.secrets,
+    generated: dto.generated,
+    engineVersion: dto.engineVersion,
+    ruleVersion: dto.ruleVersion,
+    policyVersion: dto.policyVersion,
+    inputHash: dto.inputHash,
+    resultHash: dto.resultHash,
+    actors: { A: dto.actors.A, B: dto.actors.B },
+    findings: dto.findings.map((f) => ({ ...f })),
+    diffs: dto.diffs.map((d) => ({ ...d })),
+    timeline: dto.timeline.map((t) => ({ ...t })),
+    jwts: dto.jwts.map((j) => ({ ...j })),
+    cookies: dto.cookies.map((c) => ({ ...c, flags: { ...c.flags } })),
+    graph: {
+      nodes: dto.graph.nodes.map((n) => ({ ...n })),
+      edges: dto.graph.edges.map((e) => ({ ...e })),
+    },
+    loot: dto.loot.map((item) => ({
+      kind: item.kind,
+      severity: item.severity,
+      label: item.label,
+      value: REDACTED,
+      where: item.where,
+      actor: item.actor,
+    })),
+    wordlists: {
+      ids: [...dto.wordlists.ids],
+      emails: [...dto.wordlists.emails],
+      roles: [...dto.wordlists.roles],
+      hosts: [...dto.wordlists.hosts],
+    },
+    paths: dto.paths.map((p) => ({ ...p, steps: [...p.steps], findingIds: [...p.findingIds] })),
+    replays: dto.replays.map((item) => ({
+      id: item.id,
+      title: item.title,
+      severity: item.severity,
+      note: item.note,
+      curl: REDACTED,
+      raw: REDACTED,
+      credentialSource: item.credentialSource ? { ...item.credentialSource, kinds: [...item.credentialSource.kinds] } : undefined,
+      strippedHeaders: item.strippedHeaders ? [...item.strippedHeaders] : undefined,
+      headerDiff: item.headerDiff?.map((d) => ({ ...d })),
+    })),
+    surface: dto.surface.map((s) => ({
+      ...s,
+      hosts: [...s.hosts],
+      statuses: [...s.statuses],
+      actors: [...s.actors],
+    })),
+    redaction: { dropped: [...dto.redaction.dropped], preview: [...dto.redaction.preview] },
+  };
+}
+
+function finalizeTeamReportDto(value: unknown): unknown {
+  const typed = parseOrThrow(TeamReportDtoSchema, value, "reportDto");
+  scanValue(typed, "reportDto");
+  const redacted = mapStrings(typed);
+  const again = parseOrThrow(TeamReportDtoSchema, redacted, "reportDto");
+  scanValue(again, "reportDto");
+  const json = JSON.stringify(again);
+  assertUtf8Limit(json, TEAM_LIMITS.reportBytes, "reportDto");
+  return JSON.parse(json) as unknown;
 }
 
 export function assertPolicyPayload(policy: unknown): AnalysisPolicy {
@@ -395,6 +474,12 @@ export function assertPolicyPayload(policy: unknown): AnalysisPolicy {
       if (item.length > TEAM_LIMITS.stringChars) fail("policy string too long");
     }
   }
+  if (next.successStatuses.length > TEAM_LIMITS.listItems || next.denyStatuses.length > TEAM_LIMITS.listItems) {
+    fail("policy list too long");
+  }
+  for (const n of [...next.successStatuses, ...next.denyStatuses]) {
+    if (!Number.isInteger(n) || n < 100 || n > 599) fail("policy status is invalid");
+  }
   scanValue(next, "policy");
   const json = JSON.stringify(next);
   assertUtf8Limit(json, TEAM_LIMITS.policyBytes, "policy");
@@ -429,12 +514,7 @@ export function assertReportDtoPayload(dto: unknown): unknown {
     fail("reportDto must be an object");
   }
   const parsed = parseOrThrow(ReportDtoSchema, dto, "reportDto");
-  const redacted = mapStrings(parsed);
-  const again = parseOrThrow(ReportDtoSchema, redacted, "reportDto");
-  scanValue(again, "reportDto");
-  const json = JSON.stringify(again);
-  assertUtf8Limit(json, TEAM_LIMITS.reportBytes, "reportDto");
-  return JSON.parse(json) as unknown;
+  return finalizeTeamReportDto(projectTeamReportDto(parsed));
 }
 
 export function assertAllowedCollab(write: CollabWrite): CollabWrite {
@@ -488,5 +568,5 @@ export function parseStoredReportDto(raw: string | null): unknown | null {
   } catch {
     fail("stored reportDto JSON is invalid");
   }
-  return assertReportDtoPayload(parsed);
+  return finalizeTeamReportDto(parsed);
 }

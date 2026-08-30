@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
-  assertTenantContext,
   rejectCallerTenantId,
+  requireActiveMember,
   requireName,
   requireRole,
   requireUserKey,
+  type BoundIdentity,
   type TenantContext,
 } from "./context.ts";
 import { TeamIsolationError, TeamNotFoundError, TeamValidationError } from "./errors.ts";
@@ -119,20 +120,20 @@ async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Prom
 }
 
 export async function getTenant(sql: TeamSql, ctx: TenantContext): Promise<TeamTenant> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   const rows = await sql.query<TenantRow>(
     "SELECT id, slug, name, bootstrap_actor, created_at FROM team_tenant WHERE id = $1",
-    [ctx.tenantId],
+    [ident.tenantId],
   );
   if (!rows[0]) throw new TeamNotFoundError("not found");
   return mapTenant(rows[0]);
 }
 
 export async function listMembers(sql: TeamSql, ctx: TenantContext): Promise<TeamMember[]> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   const rows = await sql.query<MemberRow>(
     "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE tenant_id = $1 ORDER BY user_key",
-    [ctx.tenantId],
+    [ident.tenantId],
   );
   return rows.map(mapMember);
 }
@@ -142,13 +143,13 @@ export async function addMember(
   ctx: TenantContext,
   input: { userKey: string; role: TeamRole },
 ): Promise<TeamMember> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   rejectCallerTenantId(input);
   const userKey = requireUserKey(input.userKey);
   const role = requireRole(input.role);
   try {
     await sql.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
-      ctx.tenantId,
+      ident.tenantId,
       userKey,
       role,
     ]);
@@ -157,7 +158,7 @@ export async function addMember(
     if (code === "23505") throw new TeamValidationError("member already exists");
     throw err;
   }
-  const member = await loadMember(sql, ctx.tenantId, userKey);
+  const member = await loadMember(sql, ident.tenantId, userKey);
   if (!member) throw new TeamNotFoundError("not found");
   return member;
 }
@@ -167,60 +168,61 @@ export async function createWorkspace(
   ctx: TenantContext,
   input: { name: string },
 ): Promise<TeamWorkspace> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   rejectCallerTenantId(input);
   const name = requireName(input.name);
   const id = randomUUID();
   await sql.query(
     "INSERT INTO team_workspace (tenant_id, id, name, created_by_user_key) VALUES ($1, $2, $3, $4)",
-    [ctx.tenantId, id, name, ctx.userKey],
+    [ident.tenantId, id, name, ident.userKey],
   );
   const rows = await sql.query<WorkspaceRow>(
     "SELECT tenant_id, id, name, created_by_user_key, created_at FROM team_workspace WHERE tenant_id = $1 AND id = $2",
-    [ctx.tenantId, id],
+    [ident.tenantId, id],
   );
   if (!rows[0]) throw new TeamNotFoundError("not found");
   return mapWorkspace(rows[0]);
 }
 
-async function loadWorkspace(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<TeamWorkspace> {
-  assertTenantContext(ctx);
+async function loadWorkspace(sql: TeamSql, ident: BoundIdentity, workspaceId: string): Promise<TeamWorkspace> {
   if (!workspaceId) throw new TeamNotFoundError("not found");
   const rows = await sql.query<WorkspaceRow>(
     "SELECT tenant_id, id, name, created_by_user_key, created_at FROM team_workspace WHERE tenant_id = $1 AND id = $2",
-    [ctx.tenantId, workspaceId],
+    [ident.tenantId, workspaceId],
   );
   if (!rows[0]) throw new TeamNotFoundError("not found");
   return mapWorkspace(rows[0]);
 }
 
 export async function getWorkspace(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<TeamWorkspace> {
-  return loadWorkspace(sql, ctx, workspaceId);
+  const ident = await requireActiveMember(sql, ctx);
+  return loadWorkspace(sql, ident, workspaceId);
 }
 
 export async function listWorkspaces(sql: TeamSql, ctx: TenantContext): Promise<TeamWorkspace[]> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   const rows = await sql.query<WorkspaceRow>(
     "SELECT tenant_id, id, name, created_by_user_key, created_at FROM team_workspace WHERE tenant_id = $1 ORDER BY created_at",
-    [ctx.tenantId],
+    [ident.tenantId],
   );
   return rows.map(mapWorkspace);
 }
 
 export async function deleteWorkspace(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<void> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   const rows = await sql.query<{ id: string }>(
     "DELETE FROM team_workspace WHERE tenant_id = $1 AND id = $2 RETURNING id",
-    [ctx.tenantId, workspaceId],
+    [ident.tenantId, workspaceId],
   );
   if (!rows[0]) throw new TeamNotFoundError("not found");
 }
 
 export async function getCollab(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<TeamCollab | null> {
-  await loadWorkspace(sql, ctx, workspaceId);
+  const ident = await requireActiveMember(sql, ctx);
+  await loadWorkspace(sql, ident, workspaceId);
   const rows = await sql.query<CollabRow>(
     "SELECT tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at FROM team_workspace_collab WHERE tenant_id = $1 AND workspace_id = $2",
-    [ctx.tenantId, workspaceId],
+    [ident.tenantId, workspaceId],
   );
   return rows[0] ? mapCollab(rows[0]) : null;
 }
@@ -231,10 +233,10 @@ export async function updateWorkspaceCollab(
   workspaceId: string,
   write: CollabWrite,
 ): Promise<TeamCollab> {
-  assertTenantContext(ctx);
+  const ident = await requireActiveMember(sql, ctx);
   rejectCallerTenantId(write);
-  await loadWorkspace(sql, ctx, workspaceId);
   const safe = assertAllowedCollab(write);
+  await loadWorkspace(sql, ident, workspaceId);
   const touchPolicy = safe.policy !== undefined;
   const touchReview = safe.review !== undefined;
   const touchReport = safe.reportDto !== undefined;
@@ -254,12 +256,12 @@ export async function updateWorkspaceCollab(
       updated_at = CURRENT_TIMESTAMP
     RETURNING tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at`,
     [
-      ctx.tenantId,
+      ident.tenantId,
       workspaceId,
       policyJson,
       reviewJson,
       reportJson,
-      ctx.userKey,
+      ident.userKey,
       touchPolicy,
       touchReview,
       touchReport,

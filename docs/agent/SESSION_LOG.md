@@ -1,3 +1,9 @@
+## 2026-08-30 — P1.1 post-mint authority + Team projection
+
+- Independent review reproduced cross-tenant list/get/collab/addMember/delete by mutating `TenantContext.tenantId` or copying the brand symbol on `f3f7878`.
+- Context mint now registers a frozen snapshot in a module-private WeakMap. Repo SQL uses `requireActiveMember` (snapshot + live `team_member` SELECT), never `ctx.tenantId`.
+- Persist is a Team projection: `loot.value` and `replays.raw`/`curl` always `[redacted]`; canaries remain defense-in-depth. No HTTP/OIDC/P1.2.
+
 ## 2026-08-30 — P1.1 persist/context hardening
 
 - Removed public `contextFromMember`. Brand is stamped only inside bootstrap (after insert) and resolve (after SELECT). Member objects are not context.

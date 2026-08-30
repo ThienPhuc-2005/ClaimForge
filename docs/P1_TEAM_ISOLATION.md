@@ -45,14 +45,14 @@ Raw loot/replay/curl export runs in the **browser** from the in-memory workspace
 - arbitrary headers (`X-Tenant-Id`, `Tenant`, …)
 - JWT / OIDC claims that have not been **linked** to a `team_member` row by server-side lookup
 
-Construction of `TenantContext` is branded (runtime symbol). A plain object `{ tenantId, userKey, role }` is rejected. `contextFromMember` is **not** a public API: a `TeamMember` row object is not a context, and no exported factory will brand an arbitrary member.
+Construction of `TenantContext` is branded (runtime symbol) **and** registered in a module-private `WeakMap<TenantContext, BoundIdentity>`. Both the context object and the snapshot are `Object.freeze`d. A plain object `{ tenantId, userKey, role }` is rejected. Copying the brand symbol onto a new object is rejected (it is not in the WeakMap). `contextFromMember` is **not** a public API.
 
-Legal factories (P1.1) — both stamp the brand only after SQL:
+Legal factories (P1.1) — both stamp the brand and register the WeakMap snapshot only after SQL:
 
-1. **Bootstrap** (admin process): `unlockBootstrap(providedSecret, configuredSecret)` → `BootstrapActor` → `bootstrapTenant` inserts tenant + first owner in one transaction and returns a context built from the **inserted member row**.
+1. **Bootstrap** (admin process): `unlockBootstrap(providedSecret, configuredSecret)` → frozen `BootstrapActor` in a WeakMap → `bootstrapTenant` inserts tenant + first owner in one transaction and returns a context built from the **inserted member row**.
 2. **Membership resolve:** `resolveTenantContext(sql, userKey, requestedTenantId?)` `SELECT`s `team_member`. The effective `tenantId` / `userKey` / `role` are copied from the **row**, not from the arguments. `requestedTenantId` is a disambiguation hint only; if the row is missing, fail closed (same as unknown tenant). If omitted and the user has one membership, use that row. If several, fail closed as ambiguous (do not pick arbitrarily).
 
-Every repository function takes `TenantContext` (or `BootstrapActor` for bootstrap only) and **every** SQL statement includes `tenant_id = ctx.tenantId` from that verified object.
+Every public repository function calls `requireActiveMember`: read the frozen WeakMap snapshot (never `ctx.tenantId` / `ctx.userKey` / `ctx.role` as SQL authority), then `SELECT` `team_member` for that pair. Missing membership is fail-closed `not found`. Live `role` comes from the row. SQL uses the snapshot/row ids only.
 
 P1.2 will bind `user_key` from a verified OIDC `iss`+`sub` after signature/iss/aud checks, then call the same resolver. Unverified tokens never become context.
 
@@ -116,22 +116,22 @@ Creating a tenant and assigning the first `owner` is an **operator procedure**, 
 | Workspace name, ids, role enum | PEM private keys, credential-shaped canaries |
 | | `tenantId` / `tenant_id` on caller persist input (spoof) |
 
-`updateWorkspaceCollab` runs `assertAllowedCollab` before SQL. ReportDTO is a **strict runtime schema** (unknown fields rejected), then deep-redacted again into a **new** object, then size-capped. Policy and review are allowlisted the same way. Compact-JWT shaped strings, live Bearer tokens, PEM, HAR `log.entries`, raw HTTP outside `replays.raw`/`curl`, `api_key` / `sessionSecret`, and oversize Base64 fail closed and write nothing.
+`updateWorkspaceCollab` runs `assertAllowedCollab` before SQL. Incoming ReportDTO is a **strict runtime schema** (unknown fields rejected). The server then **projects** a new Team object: `loot.value`, `replays.raw`, and `replays.curl` are always `[redacted]`. That projection is re-parsed as a closed Team schema, deep-redacted into another new object, then UTF-8/element capped. Client `secrets: "redacted"` is not trusted as proof that remaining strings are clean.
 
-Read path (`getCollab`) re-parses stored JSON through the same sanitizer. A tampered row is `TeamPersistError`, not returned.
+Regex canaries are defense-in-depth after projection (Bearer, Basic, Cookie, compact JWT, PEM, `curl -u` / `curl --user`, AWS `AKIA…`, oversize Base64, raw HTTP). They do not replace the projection.
+
+Read path (`getCollab`) re-parses stored JSON as the **Team** schema. A tampered row (live loot/replay blobs, unknown fields, canary hits) is `TeamPersistError`, not returned.
 
 Collab writes are a single `INSERT ... ON CONFLICT (tenant_id, workspace_id) DO UPDATE` so two first-writes cannot 23505 or split a row.
 
 UTF-8 byte caps: policy 64KiB, review 64KiB, ReportDTO 512KiB; string/fingerprint/array lengths are bounded.
 
-ReportDTO may still contain **redacted** loot/replay placeholders. That is not permission to store raw secrets. Deep-redaction canaries from P0.2 apply.
-
 ---
 
 ## 6. Security invariants (tested in P1.1)
 
-1. Forged `TenantContext` (no brand) is rejected.
-2. `tenant_id` on input objects is rejected; queries use `ctx.tenantId` only.
+1. Forged `TenantContext` (no brand / not in WeakMap) is rejected.
+2. `tenant_id` on input objects is rejected; queries use the frozen WeakMap snapshot, never caller `ctx.tenantId`.
 3. Cross-tenant read/update/delete of workspace or collab → not-found (no existence leak).
 4. Cross-tenant composite FK insert → database reject.
 5. Same `user_key` in two tenants cannot see the other tenant's rows.
@@ -140,6 +140,9 @@ ReportDTO may still contain **redacted** loot/replay placeholders. That is not p
 8. Lab `lab_revoke` and Solo analyze/export paths do not import Team and still behave.
 9. Team modules do not import `authMiddleware` / `requireUserId` / `@/lib/auth/server`.
 10. Auth schema `0001_auth.sql` remains outside `migrations/` glob.
+11. Mutating a minted context or copying its brand symbol cannot retarget tenant SQL.
+12. A context whose membership row was deleted cannot be reused.
+13. Team persist is a projection: loot values and replay raw/curl are always `[redacted]` in stored JSON.
 
 ---
 

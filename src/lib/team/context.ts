@@ -5,6 +5,12 @@ import { isTeamRole, type TeamMember, type TeamRole, type TeamSql, type TeamTena
 const TENANT_BRAND = Symbol("claimforge.team.tenant-context");
 const BOOTSTRAP_BRAND = Symbol("claimforge.team.bootstrap-actor");
 
+export type BoundIdentity = {
+  readonly tenantId: string;
+  readonly userKey: string;
+  readonly role: TeamRole;
+};
+
 export type TenantContext = {
   readonly [TENANT_BRAND]: true;
   readonly tenantId: string;
@@ -17,6 +23,13 @@ export type BootstrapActor = {
   readonly label: string;
 };
 
+type BoundBootstrap = {
+  readonly label: string;
+};
+
+const issuedContexts = new WeakMap<TenantContext, BoundIdentity>();
+const issuedBootstrap = new WeakMap<BootstrapActor, BoundBootstrap>();
+
 const MIN_BOOTSTRAP_SECRET = 16;
 
 function sha256(value: string): Buffer {
@@ -28,6 +41,14 @@ export function secretsMatch(provided: string, configured: string): boolean {
   return timingSafeEqual(sha256(provided), sha256(configured));
 }
 
+function freezeIdentity(tenantId: string, userKey: string, role: TeamRole): BoundIdentity {
+  return Object.freeze({ tenantId, userKey, role });
+}
+
+function freezeBootstrap(label: string): BoundBootstrap {
+  return Object.freeze({ label });
+}
+
 export function unlockBootstrap(provided: string, configured: string): BootstrapActor {
   if (!configured || configured.length < MIN_BOOTSTRAP_SECRET) {
     throw new TeamBootstrapError("bootstrap is not configured");
@@ -35,13 +56,29 @@ export function unlockBootstrap(provided: string, configured: string): Bootstrap
   if (!secretsMatch(provided, configured)) {
     throw new TeamBootstrapError("bootstrap denied");
   }
-  return { [BOOTSTRAP_BRAND]: true, label: "operator" };
+  const actor = Object.freeze({
+    [BOOTSTRAP_BRAND]: true as const,
+    label: "operator",
+  }) as BootstrapActor;
+  issuedBootstrap.set(actor, freezeBootstrap("operator"));
+  return actor;
 }
 
 export function assertBootstrapActor(actor: BootstrapActor): void {
-  if (!actor || actor[BOOTSTRAP_BRAND] !== true) {
+  const bound = actor ? issuedBootstrap.get(actor) : undefined;
+  if (!actor || actor[BOOTSTRAP_BRAND] !== true || !bound) {
     throw new TeamBootstrapError("bootstrap requires an operator unlock");
   }
+  if (actor.label !== bound.label || !bound.label) {
+    throw new TeamBootstrapError("bootstrap requires an operator unlock");
+  }
+}
+
+function boundBootstrap(actor: BootstrapActor): BoundBootstrap {
+  assertBootstrapActor(actor);
+  const bound = issuedBootstrap.get(actor);
+  if (!bound) throw new TeamBootstrapError("bootstrap requires an operator unlock");
+  return freezeBootstrap(bound.label);
 }
 
 type MemberRow = {
@@ -88,12 +125,14 @@ function tenantContextFromDbRow(member: TeamMember): TenantContext {
   if (!member.tenantId || !member.userKey || !isTeamRole(member.role)) {
     throw new TeamIsolationError("membership row is incomplete");
   }
-  return {
-    [TENANT_BRAND]: true,
+  const ctx = Object.freeze({
+    [TENANT_BRAND]: true as const,
     tenantId: member.tenantId,
     userKey: member.userKey,
     role: member.role,
-  };
+  }) as TenantContext;
+  issuedContexts.set(ctx, freezeIdentity(member.tenantId, member.userKey, member.role));
+  return ctx;
 }
 
 async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Promise<TeamMember | null> {
@@ -105,12 +144,39 @@ async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Prom
 }
 
 export function assertTenantContext(ctx: TenantContext): void {
-  if (!ctx || ctx[TENANT_BRAND] !== true) {
+  const bound = ctx ? issuedContexts.get(ctx) : undefined;
+  if (!ctx || ctx[TENANT_BRAND] !== true || !bound) {
     throw new TeamIsolationError("unverified tenant context");
   }
-  if (!ctx.tenantId || !ctx.userKey || !isTeamRole(ctx.role)) {
+  if (
+    ctx.tenantId !== bound.tenantId ||
+    ctx.userKey !== bound.userKey ||
+    ctx.role !== bound.role ||
+    !bound.tenantId ||
+    !bound.userKey ||
+    !isTeamRole(bound.role)
+  ) {
     throw new TeamIsolationError("unverified tenant context");
   }
+}
+
+/** Frozen snapshot from the mint registry. Never a mutable WeakMap entry. */
+function boundIdentity(ctx: TenantContext): BoundIdentity {
+  assertTenantContext(ctx);
+  const bound = issuedContexts.get(ctx);
+  if (!bound) throw new TeamIsolationError("unverified tenant context");
+  return freezeIdentity(bound.tenantId, bound.userKey, bound.role);
+}
+
+/**
+ * Central repository guard: registry identity + live membership SELECT.
+ * Role comes from the current member row, not the minted context.
+ */
+export async function requireActiveMember(sql: TeamSql, ctx: TenantContext): Promise<BoundIdentity> {
+  const bound = boundIdentity(ctx);
+  const member = await loadMember(sql, bound.tenantId, bound.userKey);
+  if (!member) throw new TeamNotFoundError("not found");
+  return freezeIdentity(member.tenantId, member.userKey, member.role);
 }
 
 /** Reject caller-supplied tenant identifiers on input objects. */
@@ -156,7 +222,7 @@ export async function bootstrapTenant(
   actor: BootstrapActor,
   input: { slug: string; name: string; ownerUserKey: string },
 ): Promise<{ tenant: TeamTenant; owner: TeamMember; context: TenantContext }> {
-  assertBootstrapActor(actor);
+  const operator = boundBootstrap(actor);
   rejectCallerTenantId(input);
   const slug = requireSlug(input.slug);
   const name = requireName(input.name);
@@ -167,7 +233,7 @@ export async function bootstrapTenant(
       tenantId,
       slug,
       name,
-      actor.label,
+      operator.label,
     ]);
     await tx.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
       tenantId,

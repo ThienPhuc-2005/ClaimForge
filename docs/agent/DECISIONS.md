@@ -81,11 +81,11 @@ The browser desk and in-browser engine stay the product default. Team features r
 
 ## ADR-019 — TenantContext comes only from a verified membership or bootstrap row
 
-`tenant_id` is never read from body, query, arbitrary headers, or unlinked JWT claims. Repository functions accept a branded `TenantContext`. SQL always uses `ctx.tenantId` from that object. `resolveTenantContext` copies ids from the `team_member` row. There is no public `contextFromMember`; only bootstrap (after insert) and resolve (after SELECT) stamp the brand.
+`tenant_id` is never read from body, query, arbitrary headers, or unlinked JWT claims. Repository functions accept a branded, frozen `TenantContext` registered in a module-private WeakMap at mint (bootstrap insert or membership SELECT only). SQL authority is the frozen snapshot plus a live `team_member` SELECT (`requireActiveMember`), never `ctx.tenantId` / `ctx.userKey` / `ctx.role`. There is no public `contextFromMember`. Symbol copies and post-mint mutation cannot retarget a tenant.
 
-## ADR-020 — Team persist allowlist is policy, review, ReportDTO
+## ADR-020 — Team persist allowlist is policy, review, projected ReportDTO
 
-No raw HAR, raw HTTP, JWT compact tokens, cookie values, or credentials on the Team server. Collab writes run `assertAllowedCollab`: strict ReportDTO schema (reject unknown fields), server-side deep-redaction into a new object, UTF-8 byte/element caps. Reads re-sanitize stored JSON. Capture sharing is a later phase after threat-model + encryption work.
+No raw HAR, raw HTTP, JWT compact tokens, cookie values, or credentials on the Team server. Collab writes run `assertAllowedCollab`: strict ReportDTO schema (reject unknown fields), server-side **Team projection** (`loot.value` and `replays.raw`/`curl` always `[redacted]`), re-parse as Team schema, deep-redact into a new object, UTF-8/element caps, then canary scan. Reads re-parse stored JSON as the Team schema. Capture sharing is a later phase after threat-model + encryption work.
 
 ## ADR-021 — OIDC client secrets are never plaintext in the database
 
@@ -131,6 +131,10 @@ P1.1 adversarial tests run against PGLite (transactional DDL, constraints, repo 
 
 The isolation kernel is a repository + migration + tests. Expanding to P1.2 without an explicit request is out of scope.
 
-## ADR-032 — Collab persist is schema + re-redact + upsert
+## ADR-032 — Collab persist is projection + canary + upsert
 
-P1.1 persist is not a key-name heuristic. ReportDTO/policy/review are closed shapes. The object stored is a newly allocated, deep-redacted copy. `team_workspace_collab` writes use `INSERT ON CONFLICT DO UPDATE` so concurrent first-writes merge columns instead of racing SELECT+INSERT.
+P1.1 persist is not a key-name heuristic and is not “regex means no credentials.” Incoming ReportDTO is a closed shape. The stored object is a newly allocated Team projection (`loot.value` / `replays.raw` / `replays.curl` = `[redacted]`), then deep-redacted, then canary-scanned. `team_workspace_collab` writes use `INSERT ON CONFLICT DO UPDATE` so concurrent first-writes merge columns instead of racing SELECT+INSERT.
+
+## ADR-033 — TenantContext identity is WeakMap + freeze + live membership
+
+Brand symbols are defense-in-depth. Authority is `WeakMap` object identity: mint after SQL, freeze context and snapshot, re-SELECT membership on every public repo call. A deleted member cannot keep using a previously minted context. Bootstrap actors use the same registry pattern.
