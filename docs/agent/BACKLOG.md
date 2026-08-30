@@ -1,4 +1,4 @@
-# Gap matrix (evidence at HEAD `57f5370` + this session)
+# Gap matrix (evidence at HEAD `d459054` + this session)
 
 | ID | Item | Status | Evidence |
 |----|------|--------|----------|
@@ -17,6 +17,6 @@
 | P0.5 | Forge revision machine | done (slice) | `forge-revision.ts`, `p0-forge-revision.test.ts`, ForgeView |
 | P0.6 | JWKS network / SSRF | done (slice) | `jwks-fetch.ts`, `p0-jwks-fetch.test.ts`; team allowlist API, no UI |
 | P0.7 | Review workflow states | done (slice) | `review.ts`, `p0-review-state.test.ts`; reason codes + review on every finding; Critical requires proven impact |
-| P0.8 | Adversarial gate per P0 bug | partial | P0.1–P0.7 tests exist; not every historical P0 file is labeled as a fail-then-pass pair |
-| P1.* | Team / tenant / OIDC | not_started | spec forbids until P0 green |
+| P0.8 | Adversarial gate per P0 bug | done (slice) | `p0-gates.ts` catalog; `p0-adversarial-gate.test.ts` fail-then-pass gaps |
+| P1.* | Team / tenant / OIDC | not_started | P0 slices green; start only if asked |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | solo limits 1200 already |

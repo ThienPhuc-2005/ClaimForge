@@ -1,5 +1,11 @@
 # Session log
 
+## 2026-08-30 — P0.8 adversarial fail-then-pass gates
+
+- Catalog `p0-gates.ts` maps every P0.1–P0.7 bug to a test that would fail if the fix is reverted.
+- New gaps: path-as-owner, wordlist formula injection, JWKS credentials=omit, audit without JWK n/e, CORS *+credentials through analyze.
+- 143 tests green. P0 slices complete. Do not start Team unless asked.
+
 ## 2026-08-30 — P0.7 confidence / severity / review state
 
 - Every finding family now has deterministic reason codes, Observation/Suspicion/Confirmed, and an analyst review state.
