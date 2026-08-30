@@ -1,8 +1,8 @@
 # Test status
 
 - **When:** remainder P0 + CI session (after gates)
-- **HEAD SHA:** pending push (fill after commit)
-- **Working tree:** remainder staged for commit; untracked `attachments/` only
+- **Remainder SHA:** `28760971f67eb6a5c9bf20a8891a5b3e43af84fe`
+- **Working tree:** untracked `attachments/` only after handoff snapshot
 - **Commands:**
   - `npm test` → **387 pass / 0 fail** (all `src/**/*.test.ts` + `scripts/*.test.mjs`)
   - `npm run typecheck` → pass
