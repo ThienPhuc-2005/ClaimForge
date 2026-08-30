@@ -1,12 +1,11 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · **HEAD `ba7d41b3482b4734cc22dbb9646066b692897d7c`** · repair `e16575e71f0adbf00efc5b6404594d5b3b10decd`.
-2. **Milestone:** v0.9 Core Hardening · **item:** remainder P0 + CI gates (done).
-3. **Session goal (done):** Record true HEAD vs `8740c6f`, finish remainder P0, raise CI (build + audit + all first-party tests). No Team backend.
-4. **Done:** P0.1–P0.8 including remainder: regex Apply block (`policyApplyDecision`), role-hierarchy scoring (Confirmed ROLE_ESCALATION, not Critical; empty tree never escalates), JWKS closed allowlist in every mode, paginated PDF with How + page numbers. CI: typecheck, lint, `npm test`, `audit:deps`, production build.
-5. **Not done:** P1 Team/OIDC. DNS rebinding still in-browser limited. PDF layout polish is P3.
-6. **Tests:** `npm test` **387 pass / 0 fail** locally; GitHub-checkout sim **383 pass / 4 skip**. `npm run typecheck`; `npm run lint`; `npm run audit:deps` (0 high); `npm run build`.
-7. **Browser:** Load lab → More → Policy: invalid `(unclosed` shows regex error and does not Apply. Hierarchy `admin: user, viewer` changelog: mass-assign observation/high → confirmed/high. JWKS allowlist field present. Export PDF no console errors.
-8. **Working tree:** clean vs `ba7d41b` except this snapshot and untracked `attachments/` (spec dump, not part of the app).
-9. **Next step only:** P1 Team backend **only if asked**. Remainder + CI are green.
-10. **CI:** https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33292213402 (success on `ba7d41b`)
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · verified `main` snapshot **`f1ed912`** (CI run 20). Implementation of P1 lives on **`feat/p1-isolation-kernel`**, not `main`.
+2. **Milestone:** v0.9 Core Hardening (P0 done) · P1 Team isolation.
+3. **This docs commit:** P1.0 architecture only. Do not treat this file as recording its own SHA.
+4. **Done:** P0.1–P0.8. P1.0 ADRs + `docs/P1_TEAM_ISOLATION.md`.
+5. **Not done:** P1.1 kernel (next commit on this branch). P1.2 OIDC/sessions, P1.3 RBAC HTTP, UI, capture upload.
+6. **Tests:** unchanged by this docs commit. Last green on `main`: CI run 20 — 387 tests, 383 pass, 4 skip, 0 fail.
+7. **Invariants already decided:** `VITE_AUTH_ENABLED=false`; Team must not use `authMiddleware`/`requireUserId`; no raw HAR/JWT/cookie persist; bootstrap is operator-only; CI is not merge-enforced until a ruleset exists.
+8. **Next step:** P1.1 isolation kernel on this branch. Do not start P1.2 unless asked.
+9. **CI (main):** https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33292274694

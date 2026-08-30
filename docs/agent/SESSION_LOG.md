@@ -1,3 +1,10 @@
+## 2026-08-30 — P1.0 Team isolation architecture
+
+- Confirmed main HEAD `f1ed912`; CI run 20 green (387 tests, 383 pass, 4 skip).
+- Accepted: Team OIDC ≠ Grok Better Auth; `VITE_AUTH_ENABLED=false`; no `authMiddleware`/`requireUserId` on Team.
+- Accepted: P1 does not persist raw HAR/HTTP/JWT/cookie/credentials.
+- Wrote `docs/P1_TEAM_ISOLATION.md` and ADR-017–031. P1.1 kernel follows on `feat/p1-isolation-kernel`. No P1.2.
+
 ## 2026-08-30 — Remainder P0 + CI gates (repair)
 
 - Recorded true HEAD `4fdf31b` first: previous remainder snapshot claimed 387/0 and remainder SHA `2876097`; GitHub Actions run 18 on that HEAD was **379 pass / 8 fail**.
