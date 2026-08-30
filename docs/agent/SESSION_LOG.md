@@ -1,3 +1,13 @@
+## 2026-08-30 — P1.1 tenant isolation kernel
+
+- Branch `feat/p1-isolation-kernel`. Docs commit already on the branch; this slice is the kernel only.
+- Migration `0003_team_isolation.sql`: tenant / member / workspace / collab with composite PK/FK. No session, OIDC, or audit tables.
+- Repo is pure (no HTTP/UI). Every query takes branded `TenantContext` and scopes `tenant_id = ctx.tenantId`. Bootstrap requires `unlockBootstrap` (timing-safe, secret ≥ 16).
+- Persist allowlist: policy, review, deep-redacted ReportDTO. Compact JWT / live Bearer / HAR / aRaw rejected. Engine `toReportDTO` is persistable (`Bearer [redacted]` is not treated as a live token).
+- Adversarial tests: forged context, caller tenantId, cross-tenant CRUD, composite FK, same user two tenants, fail-closed leak, migration rollback, solo/lab untouched, no platform-auth import.
+- Gates: typecheck, lint, `npm test` 408/404 pass/4 skip, audit 0 high, production build. Skip count still 4.
+- Not started: P1.2 OIDC/sessions. CI is not merge-enforced.
+
 ## 2026-08-30 — P1.0 Team isolation architecture
 
 - Confirmed main HEAD `f1ed912`; CI run 20 green (387 tests, 383 pass, 4 skip).

@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1 implements the isolation kernel only. P1.2+ (OIDC, RBAC HTTP, UI, sessions, audit tables) are out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1 isolation kernel is implemented on `feat/p1-isolation-kernel` (migration + pure repository + adversarial tests). P1.2+ (OIDC, RBAC HTTP, UI, sessions, audit tables) are out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 

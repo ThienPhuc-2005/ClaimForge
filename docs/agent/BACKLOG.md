@@ -19,7 +19,7 @@
 | P0.7 | Review workflow states | done | `review.ts`; Critical requires proven impact |
 | P0.8 | Adversarial gate per P0 bug | done | Catalog includes remainder rows (invalid regex, role scoring, allowlist, PDF pages) |
 | P1.0 | Team isolation architecture | done | `docs/P1_TEAM_ISOLATION.md`, ADR-017–031 |
-| P1.1 | Tenant isolation kernel | in_progress | Branch `feat/p1-isolation-kernel`. Repo+migration+tests. No HTTP. |
+| P1.1 | Tenant isolation kernel | done | `migrations/0003_team_isolation.sql`, `src/lib/team/*`, adversarial tests + `p1-gates.ts`. No HTTP. |
 | P1.2 | Customer OIDC + opaque sessions | not_started | After P1.1. Not Grok Better Auth. Secrets not plaintext in DB. |
 | P1.3 | RBAC on Team APIs | not_started | After OIDC. Server cannot claim in-browser export control. |
 | P1.4 | Append-only audit | not_started | No unsalted IP hash; HMAC with rotation or omit. |

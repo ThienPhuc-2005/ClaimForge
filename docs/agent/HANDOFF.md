@@ -1,11 +1,10 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · verified `main` snapshot **`f1ed912`** (CI run 20). Implementation of P1 lives on **`feat/p1-isolation-kernel`**, not `main`.
-2. **Milestone:** v0.9 Core Hardening (P0 done) · P1 Team isolation.
-3. **This docs commit:** P1.0 architecture only. Do not treat this file as recording its own SHA.
-4. **Done:** P0.1–P0.8. P1.0 ADRs + `docs/P1_TEAM_ISOLATION.md`.
-5. **Not done:** P1.1 kernel (next commit on this branch). P1.2 OIDC/sessions, P1.3 RBAC HTTP, UI, capture upload.
-6. **Tests:** unchanged by this docs commit. Last green on `main`: CI run 20 — 387 tests, 383 pass, 4 skip, 0 fail.
-7. **Invariants already decided:** `VITE_AUTH_ENABLED=false`; Team must not use `authMiddleware`/`requireUserId`; no raw HAR/JWT/cookie persist; bootstrap is operator-only; CI is not merge-enforced until a ruleset exists.
-8. **Next step:** P1.1 isolation kernel on this branch. Do not start P1.2 unless asked.
-9. **CI (main):** https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33292274694
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · `main` snapshot **`f1ed912`**. This work is on **`feat/p1-isolation-kernel`**. Do not treat this file as recording its own SHA.
+2. **Milestone:** v0.9 Core Hardening (P0 done) · P1.0 architecture + P1.1 isolation kernel.
+3. **Done:** P0.1–P0.8. P1.0 ADRs + `docs/P1_TEAM_ISOLATION.md`. P1.1 kernel: branded `TenantContext`, operator bootstrap, composite FK schema, persist allowlist, adversarial tests. No HTTP, no UI, no OIDC.
+4. **Not done:** P1.2 customer OIDC + opaque sessions, P1.3 RBAC HTTP, P1.4 audit, P1.5 collab HTTP, P1.6 Team UI, encrypted capture share.
+5. **Tests (this branch, GitHub-checkout shape):** 408 tests, **404 pass / 4 skip / 0 fail**. typecheck, lint, `audit:deps` (0 high), production build green. Skip count unchanged (sandbox docs / og skill).
+6. **Invariants:** `VITE_AUTH_ENABLED=false`; Team must not use `authMiddleware`/`requireUserId`; no raw HAR/JWT/cookie persist; bootstrap is operator-only; CI is not merge-enforced until a ruleset exists.
+7. **Next step:** wait CI on this HEAD via pull request. Do not start P1.2 unless asked. Do not merge to `main` unless asked.
+8. **CI (main, pre-P1):** https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33292274694
