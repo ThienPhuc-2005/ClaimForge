@@ -42,7 +42,8 @@ function redactPlain(input: string): string {
   out = out.replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
   out = out.replace(/Basic\s+\S+/gi, "Basic [redacted]");
   out = out.replace(/((?:Set-)?Cookie:\s*)[^\r\n]+/gi, "$1[redacted]");
-  out = out.replace(/([?&](?:access_token|refresh_token|id_token|token|jwt)=)[^&\s]+/gi, "$1[redacted]");
+  out = out.replace(/([?&](?:access_token|refresh_token|id_token|token|jwt|fragment)=)[^&\s#]+/gi, "$1[redacted]");
+  out = out.replace(/(#[^?\s]*token[^?\s]*)/gi, "#[redacted]");
   out = out.replace(
     /((?:api[_-]?key|x-api-key|client_secret|clientSecret|password|passwd|secret|private_key|privateKey|sid|session)\s*[:=]\s*)("[^"]*"|'[^']*'|\S+)/gi,
     "$1[redacted]",
@@ -74,7 +75,13 @@ export function redactCookie(c: CookieRecord): CookieRecord {
 }
 
 export function redactJwtToken(j: JwtToken): JwtToken {
-  return { ...j, raw: redactJwt(j.raw), signature: j.signature ? "[sig]" : "" };
+  return {
+    ...j,
+    raw: redactJwt(j.raw),
+    signature: j.signature ? "[sig]" : "",
+    payload: redactJsonValue(j.payload) as Record<string, unknown>,
+    issues: j.issues.map((i) => redactText(i)),
+  };
 }
 
 export function redactReplay(r: ReplayItem): ReplayItem {
@@ -85,8 +92,9 @@ export function redactRequest(r: CapturedRequest): CapturedRequest {
   return {
     ...r,
     url: redactText(r.url),
+    path: redactText(r.path),
     requestHeaders: r.requestHeaders.map((h) =>
-      /authorization|cookie|api-?key|secret|token|password|private/i.test(h.name)
+      /authorization|cookie|api-?key|secret|token|password|private|csrf|x-api-key/i.test(h.name)
         ? { ...h, value: "[redacted]" }
         : { ...h, value: redactText(h.value) },
     ),
@@ -97,6 +105,11 @@ export function redactRequest(r: CapturedRequest): CapturedRequest {
     ),
     requestBody: r.requestBody ? redactText(r.requestBody) : r.requestBody,
     responseBody: r.responseBody ? redactText(r.responseBody) : r.responseBody,
+    query: Object.fromEntries(
+      Object.entries(r.query).map(([k, v]) =>
+        /token|jwt|secret|password|key|sid|session/i.test(k) ? [k, "[redacted]"] : [k, redactText(v)],
+      ),
+    ),
   };
 }
 
@@ -107,6 +120,13 @@ function redactFinding(f: Finding): Finding {
     why: redactText(f.why),
     how: redactText(f.how),
     evidence: f.evidence.map((e) => redactText(e)),
+    canonical: f.canonical
+      ? {
+          ...f.canonical,
+          endpoint: redactText(f.canonical.endpoint),
+          ownershipReason: redactText(f.canonical.ownershipReason),
+        }
+      : f.canonical,
   };
 }
 
@@ -130,6 +150,24 @@ export function redactWorkspace(ws: Workspace): Workspace {
       aSample: d.aSample ? redactRequest(d.aSample) : undefined,
       bSample: d.bSample ? redactRequest(d.bSample) : undefined,
     })),
+    graph: {
+      nodes: ws.graph.nodes.map((n) => ({ ...n, label: redactText(n.label) })),
+      edges: ws.graph.edges.map((e) => ({ ...e, via: redactText(e.via) })),
+    },
+    wordlists: {
+      ids: ws.wordlists.ids.map((x) => redactText(x)),
+      emails: ws.wordlists.emails.map((x) => redactText(x)),
+      roles: ws.wordlists.roles.map((x) => redactText(x)),
+      hosts: ws.wordlists.hosts.map((x) => redactText(x)),
+    },
+    paths: ws.paths.map((p) => ({
+      ...p,
+      title: redactText(p.title),
+      objective: redactText(p.objective),
+      steps: p.steps.map((s) => redactText(s)),
+    })),
+    idsA: ws.idsA.map((x) => redactText(x)),
+    idsB: ws.idsB.map((x) => redactText(x)),
     parseErrorA: ws.parseErrorA ? redactText(ws.parseErrorA) : ws.parseErrorA,
     parseErrorB: ws.parseErrorB ? redactText(ws.parseErrorB) : ws.parseErrorB,
   };

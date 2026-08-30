@@ -11,3 +11,11 @@ Unsigned/unverified JWTs are common in lab HAR. Spec allows analyst-declared act
 ## ADR-003 — JWT subject values are never object ids
 
 Inventory and owner-object ids that equal any captured JWT subject (even unverified) are skipped so `sub`/`userId` colliding with `/resource/{id}` cannot confirm BOLA.
+
+## ADR-004 — Exporters only accept ReportDTO
+
+`exportReportJson` / markdown / html / pdf map from `toReportDTO`. Diff samples, jwt payload, cookie values, and raw HAR are dropped rather than redacted-in-place.
+
+## ADR-005 — PDF is a generated text PDF
+
+No PDF library in the tree. P0.2 ships a PDF 1.4 Helvetica text dump for canaries and offline share. Layout quality is P3.

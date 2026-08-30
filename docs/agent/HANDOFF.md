@@ -1,16 +1,16 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · **HEAD `7246f43`** (P0.1 commit). Verified base before session: `b7665b7`.
-2. **Milestone:** v0.9 Core Hardening · **item:** P0.1 Canonical Evidence / Policy trust boundary (first vertical slice).
-3. **Session goal:** Baseline audit + `docs/agent/` bootstrap + P0.1 trust boundary so request body / unverified JWT cannot yield BOLA `confirmed`.
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · session base `11c2051`. Push will move HEAD.
+2. **Milestone:** v0.9 Core Hardening · **item:** P0.2 Canonical ReportDTO (this session).
+3. **Session goal:** ReportDTO allowlist; exporters JSON/MD/HTML/PDF only see redacted DTO; canary tests.
 4. **Done:**
-   - Policy + versions + canonical evidence types (`src/lib/claimforge/policy.ts`, `evidence.ts`, `versions.ts`, `hash.ts`).
-   - `ownedObjects` ignores request body/query/path; JWT identity only if `sigStatus === verified` (plus analyst labels).
-   - Workspace carries `engineVersion`, `ruleVersion`, `policyVersion`, `inputHash`, `resultHash`.
-   - Adversarial tests: `src/lib/claimforge/p0-trust-boundary.test.ts`.
-5. **Not done:** Policy editor UI, ReportDTO/P0.2, replay credential wipe P0.3, Team/OIDC.
-6. **Tests:** `npm run test:claimforge` — 92 pass. `npm run typecheck` pass. `npm run lint` pass. See `TEST_STATUS.md`.
-7. **Risks:** Default policy treats analyst labels as trusted identity (needed for unsigned lab JWTs). Inventory IDs that equal any JWT subject are excluded. No policy editor yet — in-code `DEFAULT_POLICY` only.
-8. **Working tree:** dirty in this sandbox (no `.git` overlay). Push required to update GitHub HEAD.
-9. **Next step only:** P0.2 — Canonical ReportDTO allowlist + recursive redaction canaries (JSON/MD). Do not start Team backend.
-10. **Next-session prompt:** Continue ClaimForge from repository state. Read README, threat model, `docs/agent/*`. Only implement P0.2 ReportDTO redaction boundary. Run `npm run test:claimforge` including new canary tests. Update handoff before exit.
+   - `toReportDTO` / `buildReport` — no aRaw, requests, jwt payload/raw, cookie values, diff samples.
+   - Renderers: JSON, Markdown, HTML (escaped), minimal PDF 1.4.
+   - CWE/OWASP + CVSS draft on findings; redaction preview field.
+   - Canaries in `p0-report-dto.test.ts`.
+5. **Not done:** Policy editor, P0.3 replay credential matrix, Team/OIDC. PDF is a text dump not a paginated layout.
+6. **Tests:** `npm run test:claimforge` 96 pass; typecheck; lint. See `TEST_STATUS.md`.
+7. **Risks:** CVSS is always draft. Custom workspace secret-key lists not yet a UI. PDF has no embedded fonts beyond Helvetica.
+8. **Working tree:** sandbox dirty until push.
+9. **Next step only:** P0.3 Replay credential boundary — strip all source credentials before attaching the selected actor set; UI source/diff without full secrets. No Team backend.
+10. **Next-session prompt:** Continue from repo. Read `docs/agent/HANDOFF.md`. Only implement P0.3 replay credential wipe + tests for mixed Authorization/Cookie/API-Key/CSRF. Update handoff before exit.

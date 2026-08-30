@@ -87,15 +87,7 @@ test("export JSON and markdown do not leak tokens, cookies, or passwords from di
     assert.doesNotMatch(blob, /supersecret/);
   }
   const parsed = exportReportJson(ws);
-  for (const d of parsed.diffs) {
-    const sample = JSON.stringify({ a: d.aSample, b: d.bSample });
-    assert.doesNotMatch(sample, /alice-session-01/);
-    assert.doesNotMatch(sample, /dummysig/);
-    assert.doesNotMatch(sample, /"password"\s*:\s*"demo"/);
-    for (const h of [...(d.aSample?.requestHeaders ?? []), ...(d.bSample?.requestHeaders ?? [])]) {
-      if (/authorization|cookie|password/i.test(h.name)) assert.equal(h.value, "[redacted]");
-    }
-  }
+  assert.equal("aSample" in (parsed.diffs[0] ?? {}), false);
   for (const f of parsed.findings) {
     const blob = `${f.title}\n${f.why}\n${f.how}\n${f.evidence.join("\n")}`;
     assert.doesNotMatch(blob, /dummysig/);

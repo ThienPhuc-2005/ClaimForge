@@ -11,7 +11,7 @@
 | pre | Parser fuzz | done | `parse.fuzz.test.ts` |
 | pre | Security headers | done | `security-headers.ts` |
 | P0.1 | Canonical evidence + policy trust | done (slice) | `policy.ts`, `evidence.ts`, `ids.ts` ownedObjects, `p0-trust-boundary.test.ts`. No policy editor UI. |
-| P0.2 | Deep redaction + ReportDTO | partial | `redact.ts` exists; not allowlist ReportDTO / HTML/PDF / canaries-all-slots |
+| P0.2 | Deep redaction + ReportDTO | done (slice) | `report-dto.ts`, `report.ts` JSON/MD/HTML/PDF; canaries `p0-report-dto.test.ts`. PDF is text-only. |
 | P0.3 | Replay credential boundary | partial | playbook strips Authorization/Cookie; not full header matrix / UI diff |
 | P0.4 | Session/logout model | partial | `session.ts` lab-only confirmed |
 | P0.5 | Forge revision machine | partial | forge clears signed output; no explicit Unsigned/Signed/Stale enum |

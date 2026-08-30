@@ -39,7 +39,7 @@ Inspection is local. Signature status is `unsigned` / `unverified` / `verified` 
 
 ## Export
 
-JSON and Markdown exports redact JWT compact tokens, bearer/basic, cookie values, and password/secret JSON fields — including those nested in AuthZ-diff samples and finding evidence. Do not treat export as a full forensic archive of the HAR.
+JSON, Markdown, HTML, and PDF exporters consume a redacted **ReportDTO** allowlist only — never raw HAR, JWT compact tokens, cookie values, or AuthZ-diff samples. Nested secret keys, query tokens, and PEM blocks are masked. HTML is escaped; spreadsheet-formula prefixes on wordlists are neutralized. Do not treat export as a full forensic archive of the HAR.
 
 ## Performance and workers
 
