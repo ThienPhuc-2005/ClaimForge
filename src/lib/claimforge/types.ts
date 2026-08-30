@@ -93,8 +93,9 @@ export interface Finding {
   template?: string;
   how: string;
   fingerprint?: string;
-  reasonCodes?: ReasonCode[];
-  reviewState?: ReviewState;
+  reasonCodes: ReasonCode[];
+  reviewState: ReviewState;
+  missingEvidence?: string[];
   canonical?: CanonicalEvidence;
 }
 

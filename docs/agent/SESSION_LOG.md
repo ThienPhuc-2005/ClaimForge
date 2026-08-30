@@ -1,5 +1,12 @@
 # Session log
 
+## 2026-08-30 — P0.7 confidence / severity / review state
+
+- Every finding family now has deterministic reason codes, Observation/Suspicion/Confirmed, and an analyst review state.
+- Critical requires proven impact (trusted ownership + cross-actor 2xx). JWT alg=none and cookie flags cannot be Confirmed/Critical.
+- Analyst review overlays persist by fingerprint; engine confidence is immutable.
+- 134 tests green. Next: P0.8 adversarial-gate completeness.
+
 ## 2026-08-30 — P0.6 JWKS network guards
 
 - HTTPS-only except localhost HTTP. Confirm dialog. Timeout 8s, 64KiB, JSON content-type, redirect revalidation.

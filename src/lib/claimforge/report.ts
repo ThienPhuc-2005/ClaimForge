@@ -40,7 +40,8 @@ export function renderReportMarkdown(dto: ReportDTO): string {
   }
   lines.push(`## Findings`, ``);
   for (const f of dto.findings) {
-    lines.push(`### [${f.severity} · ${f.confidence}] ${safeMdInline(f.title)}`, ``, safeMdInline(f.why), ``);
+    lines.push(`### [${f.severity} · ${f.confidence} · ${f.reviewState}] ${safeMdInline(f.title)}`, ``, safeMdInline(f.why), ``);
+    if (f.reasonCodes.length) lines.push(`- Reason: ${f.reasonCodes.map(safeMdInline).join(", ")}`);
     if (f.cwe.length) lines.push(`- CWE: ${f.cwe.join(", ")}`);
     if (f.owasp.length) lines.push(`- OWASP: ${f.owasp.join(", ")}`);
     if (f.cvssDraft.score != null) lines.push(`- CVSS draft: ${f.cvssDraft.score} (${f.cvssDraft.status})`);
@@ -67,8 +68,9 @@ export function renderReportHtml(dto: ReportDTO): string {
   const findings = dto.findings
     .map(
       (f) => `<article>
-<h3>${escapeHtml(`[${f.severity} · ${f.confidence}] ${f.title}`)}</h3>
+<h3>${escapeHtml(`[${f.severity} · ${f.confidence} · ${f.reviewState}] ${f.title}`)}</h3>
 <p>${escapeHtml(f.why)}</p>
+<p>${escapeHtml((f.reasonCodes ?? []).join(", "))}</p>
 <ul>${f.cwe.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
 <pre>${escapeHtml(f.evidence.join("\n"))}</pre>
 <p>${escapeHtml(f.how)}</p>

@@ -1,4 +1,4 @@
-# Gap matrix (evidence at HEAD `35b2eff` + this session)
+# Gap matrix (evidence at HEAD `57f5370` + this session)
 
 | ID | Item | Status | Evidence |
 |----|------|--------|----------|
@@ -16,7 +16,7 @@
 | P0.4 | Session/logout model | done (slice) | `session.ts` credential-scoped revoke; `p0-session-logout.test.ts` |
 | P0.5 | Forge revision machine | done (slice) | `forge-revision.ts`, `p0-forge-revision.test.ts`, ForgeView |
 | P0.6 | JWKS network / SSRF | done (slice) | `jwks-fetch.ts`, `p0-jwks-fetch.test.ts`; team allowlist API, no UI |
-| P0.7 | Review workflow states | partial | confidence classes exist; reviewState on BOLA findings |
-| P0.8 | Adversarial gate per P0 bug | partial | P0.1–P0.3 tests exist |
+| P0.7 | Review workflow states | done (slice) | `review.ts`, `p0-review-state.test.ts`; reason codes + review on every finding; Critical requires proven impact |
+| P0.8 | Adversarial gate per P0 bug | partial | P0.1–P0.7 tests exist; not every historical P0 file is labeled as a fail-then-pass pair |
 | P1.* | Team / tenant / OIDC | not_started | spec forbids until P0 green |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | solo limits 1200 already |

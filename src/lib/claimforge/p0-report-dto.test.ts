@@ -37,6 +37,8 @@ function wrap(ws: Workspace): Workspace {
         how: cookie,
         evidence: [bearer, `https://x/api?access_token=${CANARY}#token=${CANARY}`],
         fingerprint: "canary",
+        reasonCodes: ["CAPTURE_HEURISTIC_ONLY"],
+        reviewState: "new",
       },
     ],
     loot: [
@@ -174,6 +176,8 @@ test("HTML escapes markup; markdown strips fence breakers; formulas prefixed", (
     impact: "",
     remediation: "",
     retest: null,
+    reasonCodes: [],
+    missingEvidence: [],
   });
   const html = renderReportHtml(dto);
   assert.doesNotMatch(html, /<script>/);

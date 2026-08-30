@@ -4,7 +4,8 @@ import { analyze } from "./analyze.ts";
 import { analyzeAsync, cancelAnalyzeJobs } from "./analyze-async.ts";
 import { ANALYZE_DEBOUNCE_MS, MAX_CAPTURE_BYTES } from "./limits.ts";
 import { DEMO_A_LABEL, DEMO_B_LABEL, demoActorA, demoActorB } from "./demo.ts";
-import type { Workspace } from "./types.ts";
+import type { ReviewState, Workspace } from "./types.ts";
+import { applyReviewOverrides, applyReviewTransition } from "./review.ts";
 
 export type DeskTab =
   | "findings"
@@ -29,11 +30,13 @@ interface ForgeState {
   parseErrorB: string | null;
   tab: DeskTab;
   workspace: Workspace;
+  reviewByFingerprint: Record<string, ReviewState>;
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
   setLabel: (side: "a" | "b", label: string) => void;
   setTab: (tab: ForgeState["tab"]) => void;
   setPersistCaptures: (v: boolean) => void;
   setImportError: (msg: string | null) => void;
+  setFindingReview: (fingerprint: string, to: ReviewState) => boolean;
   loadDemo: () => void;
   clearAll: () => void;
 }
@@ -58,7 +61,12 @@ function runAnalyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string, 
   void analyzeAsync(aRaw, bRaw, aLabel, bLabel)
     .then((workspace) => {
       if (gen !== runGen) return;
-      set({ workspace, analyzing: false, ...parseFields(workspace) });
+      const overlays = useForge.getState().reviewByFingerprint;
+      set({
+        workspace: { ...workspace, findings: applyReviewOverrides(workspace.findings, overlays) },
+        analyzing: false,
+        ...parseFields(workspace),
+      });
     })
     .catch((e) => {
       if (gen !== runGen) return;
@@ -82,6 +90,7 @@ export const useForge = create<ForgeState>()(
       parseErrorB: null,
       tab: "findings",
       workspace: emptyWs(DEMO_A_LABEL, DEMO_B_LABEL),
+      reviewByFingerprint: {},
       setActor: (side, raw, immediate) => {
         if (raw.length > MAX_CAPTURE_BYTES) {
           set({ importError: `Capture exceeds ${Math.round(MAX_CAPTURE_BYTES / (1024 * 1024))} MB limit.` });
@@ -108,6 +117,27 @@ export const useForge = create<ForgeState>()(
       setTab: (tab) => set({ tab }),
       setPersistCaptures: (persistCaptures) => set({ persistCaptures }),
       setImportError: (importError) => set({ importError }),
+      setFindingReview: (fingerprint, to) => {
+        const ws = get().workspace;
+        const finding = ws.findings.find((f) => (f.fingerprint || f.id) === fingerprint);
+        if (!finding) return false;
+        try {
+          applyReviewTransition(finding.reviewState, to);
+        } catch {
+          return false;
+        }
+        const reviewByFingerprint = { ...get().reviewByFingerprint, [fingerprint]: to };
+        set({
+          reviewByFingerprint,
+          workspace: {
+            ...ws,
+            findings: ws.findings.map((f) =>
+              (f.fingerprint || f.id) === fingerprint ? { ...f, reviewState: to } : f,
+            ),
+          },
+        });
+        return true;
+      },
       loadDemo: () => {
         const aRaw = demoActorA();
         const bRaw = demoActorB();
@@ -131,6 +161,7 @@ export const useForge = create<ForgeState>()(
           parseErrorA: null,
           parseErrorB: null,
           analyzing: false,
+          reviewByFingerprint: {},
           workspace: emptyWs(get().aLabel, get().bLabel),
         });
       },
@@ -146,8 +177,15 @@ export const useForge = create<ForgeState>()(
               bRaw: s.bRaw,
               tab: s.tab,
               persistCaptures: true as const,
+              reviewByFingerprint: s.reviewByFingerprint,
             }
-          : { aLabel: s.aLabel, bLabel: s.bLabel, tab: s.tab, persistCaptures: false as const },
+          : {
+              aLabel: s.aLabel,
+              bLabel: s.bLabel,
+              tab: s.tab,
+              persistCaptures: false as const,
+              reviewByFingerprint: s.reviewByFingerprint,
+            },
       onRehydrateStorage: () => (state) => {
         if (typeof localStorage !== "undefined") {
           try {
@@ -158,6 +196,7 @@ export const useForge = create<ForgeState>()(
           }
         }
         if (!state) return;
+        if (!state.reviewByFingerprint) state.reviewByFingerprint = {};
         if ((state.tab as string) === "artifacts") state.tab = "findings";
         const busy = state.analyzing || state.workspace.requests.length > 0;
         if (!state.persistCaptures && !busy) {

@@ -32,6 +32,9 @@ export function mergeFindings(list: Finding[]): Finding[] {
       severity: SEV[f.severity] < SEV[prev.severity] ? f.severity : prev.severity,
       confidence: CONF[f.confidence] < CONF[prev.confidence] ? f.confidence : prev.confidence,
       evidence: [...new Set([...prev.evidence, ...f.evidence].filter(Boolean))],
+      reasonCodes: [...new Set([...prev.reasonCodes, ...f.reasonCodes])],
+      reviewState: primary.reviewState,
+      missingEvidence: [...new Set([...(prev.missingEvidence ?? []), ...(f.missingEvidence ?? [])])],
       fingerprint: k,
     });
   }

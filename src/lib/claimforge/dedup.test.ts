@@ -46,6 +46,8 @@ test("mergeFindings keeps strongest severity and concatenates evidence", () => {
     evidence: ["e1"],
     how: "how a",
     fingerprint: "bola:/api/invoices/{id}",
+    reasonCodes: ["CROSS_ACTOR_2XX", "SERVER_OWNERSHIP_PROOF"],
+    reviewState: "new",
   };
   const b: Finding = {
     id: "F2",
@@ -56,6 +58,8 @@ test("mergeFindings keeps strongest severity and concatenates evidence", () => {
     evidence: ["e2"],
     how: "how b",
     fingerprint: "bola:/api/invoices/{id}",
+    reasonCodes: ["CROSS_ACTOR_2XX"],
+    reviewState: "new",
   };
   const merged = mergeFindings([a, b]);
   assert.equal(merged.length, 1);

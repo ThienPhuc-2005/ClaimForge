@@ -26,7 +26,8 @@ export interface ReportFindingDTO {
   impact: string;
   remediation: string;
   retest: string | null;
-  reasonCodes?: string[];
+  reasonCodes: string[];
+  missingEvidence: string[];
 }
 
 export interface ReportDTO {
@@ -109,7 +110,7 @@ function findingDto(f: Finding): ReportFindingDTO {
     id: f.id,
     severity: f.severity,
     confidence: f.confidence,
-    reviewState: f.reviewState ?? "new",
+    reviewState: f.reviewState,
     title: redactText(f.title),
     why: redactText(f.why),
     how: redactText(f.how),
@@ -124,8 +125,9 @@ function findingDto(f: Finding): ReportFindingDTO {
     actual: redactText(f.why),
     impact: f.severity === "critical" || f.severity === "high" ? "Cross-actor data exposure (heuristic)" : "Informational",
     remediation: redactText(f.how),
-    retest: null,
+    retest: f.reviewState === "retest-passed" ? "passed" : f.reviewState === "retest-failed" ? "failed" : null,
     reasonCodes: f.reasonCodes,
+    missingEvidence: (f.missingEvidence ?? []).map((e) => redactText(e)),
   };
 }
 

@@ -35,3 +35,12 @@ A signed compact JWT is valid to copy only while `signedAtRevision === revision`
 ## ADR-009 — JWKS fetch is confirmed, allowlisted, and never uses createRemoteJWKSet
 
 P0.6 fetches the JWKS document with `credentials:omit`, `redirect:manual`, HTTPS (HTTP loopback only), size/timeout/content-type gates, and `jwksConfirmed`. Audit stores hostname/status/bytes, never tokens or JWK material. Team mode blocks private/link-local/metadata and requires a hostname allowlist.
+
+## ADR-010 — Engine confidence is not analyst review
+
+P0.7 keeps two orthogonal fields on every finding:
+
+- `confidence` (Observation / Suspicion / Confirmed) is deterministic, produced by the rule engine, and cannot be edited.
+- `reviewState` is the analyst workflow (`new` → `needs-evidence` | `confirmed` | `rejected` | `accepted-risk` → `fixed` → retest).
+
+Severity never becomes Critical from a finding type name. Observation and Suspicion cap at High. Confirmed Critical requires proven impact (`CROSS_ACTOR_2XX` + `SERVER_OWNERSHIP_PROOF`). Analyst review overlays persist by fingerprint and survive re-analysis without changing engine confidence.

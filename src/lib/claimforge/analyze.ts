@@ -22,6 +22,13 @@ import { buildPaths, buildReplays } from "./playbook.ts";
 import { classifySameObject, looksPublicOrShared, sameObjectHits, strongestClass } from "./bola.ts";
 import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
 import { jwtIssueKind, mergeFindings } from "./dedup.ts";
+import {
+  cookieReasonCode,
+  finalizeFinding,
+  jwtReasonCodes,
+  lootReasonCode,
+  type FindingDraft,
+} from "./review.ts";
 
 function trimBody(s?: string): string | undefined {
   if (s == null || s.length <= MAX_BODY_CHARS) return s;
@@ -178,9 +185,9 @@ function corsHow(value: string): string {
 function findings(ws: Omit<Workspace, "findings">): Finding[] {
   const out: Finding[] = [];
   let n = 0;
-  const add = (f: Omit<Finding, "id">) => {
+  const add = (f: FindingDraft) => {
     n += 1;
-    out.push({ id: `F${n}`, ...f, confidence: f.confidence ?? "observation" });
+    out.push({ id: `F${n}`, ...finalizeFinding(f) });
   };
 
   for (const jwt of ws.jwts) {
@@ -203,6 +210,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         evidence: [`alg=${jwt.alg ?? "?"}`, `src=${jwt.source}`, `sub=${jwtSubject(jwt) ?? "?"}`],
         how: "This is a capture heuristic (alg=none / embedded jwk / unsigned). Confirm the API rejects those in a lab proxy. Do not send forged tokens at live hosts from this app.",
         fingerprint: `jwt:${jwt.actor}:${kind}`,
+        reasonCodes: jwtReasonCodes(kind, issues),
       });
     }
   }
@@ -226,6 +234,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         ],
         how: "Session cookies need HttpOnly + Secure + SameSite=Lax/Strict. Fix on the lab app, then re-capture.",
         fingerprint: `cookie:${c.actor}:${c.name}:${issue}`,
+        reasonCodes: [cookieReasonCode(issue)],
       });
     }
   }
@@ -286,6 +295,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         template: row.template,
         how: "Heuristic. Bind the object to session.sub before returning 200. Replay B's token on A's object in a lab proxy, then file.",
         fingerprint: `bola:${row.template}`,
+        reasonCodes: ["CROSS_ACTOR_2XX", "SERVER_OWNERSHIP_PROOF"],
       });
     } else if (row.verdict === "suspect") {
       add({
@@ -301,6 +311,8 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         template: row.template,
         how: "Capture a body with ownerId/userId, or an A-only inventory listing this id, before calling it BOLA.",
         fingerprint: `bola-suspect:${row.template}`,
+        reasonCodes: ["CROSS_ACTOR_2XX", "MISSING_TRUSTED_OWNERSHIP"],
+        missingEvidence: ["trusted server ownership proof (ownerId / inventory)"],
       });
     } else if (row.verdict === "shared") {
       add({
@@ -312,6 +324,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         template: row.template,
         how: "Both roles 2xx on a catalog/public/shared object is often expected. Do not file as IDOR from this row alone.",
         fingerprint: `shared:${row.template}`,
+        reasonCodes: ["PUBLIC_OR_SHARED_ROUTE"],
       });
     }
   }
@@ -328,6 +341,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         template: req.template,
         how: "Move bearer tokens to Authorization header.",
         fingerprint: `token-query:${req.template}`,
+        reasonCodes: ["TOKEN_IN_QUERY"],
       });
     }
     if (loc.toLowerCase().startsWith("basic ")) {
@@ -339,6 +353,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         evidence: [`${req.method} ${req.path}`],
         how: "Prefer short-lived bearer tokens.",
         fingerprint: `basic:${req.template}`,
+        reasonCodes: ["HTTP_BASIC"],
       });
     }
   }
@@ -360,6 +375,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
                 ? "Debug traces leak paths and versions — fold into recon, not a live spray from this app."
                 : "Treat keys in captures as compromised for the engagement. Rotate in the lab.",
         fingerprint: `loot:${l.kind}:${l.where}:${l.label}`,
+        reasonCodes: [lootReasonCode(l.kind, l.value)],
       });
     }
   }
@@ -394,6 +410,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       evidence: [`${ws.requests.length} requests`],
       how: "Capture the same sensitive routes as both roles, including object ids that belong to A.",
       fingerprint: "none",
+      reasonCodes: ["NO_FINDING"],
     });
   }
 

@@ -24,7 +24,13 @@ import {
   isPrimaryTab,
   nextPrimaryTab,
 } from "@/lib/claimforge/desk-nav.ts";
-import type { Finding, Severity } from "@/lib/claimforge/types";
+import type { Finding, FindingConfidence, ReviewState, Severity } from "@/lib/claimforge/types";
+import {
+  canTransitionReview,
+  CONFIDENCE_CLASSES,
+  REVIEW_STATES,
+  reviewLabel,
+} from "@/lib/claimforge/review.ts";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -428,34 +434,103 @@ function sevClass(s: Severity) {
 }
 
 function FindingsList({ findings }: { findings: Finding[] }) {
+  const setFindingReview = useForge((s) => s.setFindingReview);
+  const [confFilter, setConfFilter] = useState<"all" | FindingConfidence>("all");
+  const [reviewFilter, setReviewFilter] = useState<"all" | ReviewState>("all");
+  const visible = findings.filter(
+    (f) => (confFilter === "all" || f.confidence === confFilter) && (reviewFilter === "all" || f.reviewState === reviewFilter),
+  );
   if (!findings.length) {
     return <p className="p-6 text-sm text-muted">Import two captures to score auth bugs.</p>;
   }
   return (
-    <ul className="flex flex-col gap-2">
-      {findings.map((f) => (
-        <li key={f.id} className="rounded-lg border border-border bg-elevated p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("rounded-sm border px-1.5 py-0.5 font-mono text-[11px] uppercase", sevClass(f.severity))}>
-              {f.severity}
-            </span>
-            <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] uppercase text-muted">
-              {f.confidence}
-            </span>
-            <h3 className="text-sm font-medium">{f.title}</h3>
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-muted">{f.why}</p>
-          <ul className="mt-2 space-y-1 font-mono text-xs text-subtle">
-            {f.evidence.filter(Boolean).map((e) => (
-              <li key={e} className="truncate">
-                {e}
-              </li>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-muted">
+          Confidence
+          <select
+            className="ml-2 h-9 rounded-md border border-border bg-elevated px-2 text-sm text-fg"
+            value={confFilter}
+            onChange={(e) => setConfFilter(e.target.value as "all" | FindingConfidence)}
+            aria-label="Filter by confidence"
+          >
+            <option value="all">All</option>
+            {CONFIDENCE_CLASSES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
-          </ul>
-          <p className="mt-2 text-xs leading-relaxed text-fg">{f.how}</p>
-        </li>
-      ))}
-    </ul>
+          </select>
+        </label>
+        <label className="text-xs text-muted">
+          Review
+          <select
+            className="ml-2 h-9 rounded-md border border-border bg-elevated px-2 text-sm text-fg"
+            value={reviewFilter}
+            onChange={(e) => setReviewFilter(e.target.value as "all" | ReviewState)}
+            aria-label="Filter by review state"
+          >
+            <option value="all">All</option>
+            {REVIEW_STATES.map((s) => (
+              <option key={s} value={s}>
+                {reviewLabel(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-xs text-subtle">
+          {visible.length}/{findings.length} · engine confidence is separate from analyst review
+        </p>
+      </div>
+      <ul className="flex flex-col gap-2">
+        {visible.map((f) => (
+          <li key={f.id} className="rounded-lg border border-border bg-elevated p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn("rounded-sm border px-1.5 py-0.5 font-mono text-[11px] uppercase", sevClass(f.severity))}>
+                {f.severity}
+              </span>
+              <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] uppercase text-muted">
+                {f.confidence}
+              </span>
+              <h3 className="text-sm font-medium">{f.title}</h3>
+              <label className="ml-auto text-xs text-muted">
+                Review
+                <select
+                  className="ml-2 h-9 rounded-md border border-border bg-bg px-2 text-xs text-fg"
+                  value={f.reviewState}
+                  aria-label={`Review state for ${f.title}`}
+                  onChange={(e) => {
+                    const to = e.target.value as ReviewState;
+                    if (!setFindingReview(f.fingerprint || f.id, to)) {
+                      e.target.value = f.reviewState;
+                    }
+                  }}
+                >
+                  {REVIEW_STATES.map((s) => (
+                    <option key={s} value={s} disabled={!canTransitionReview(f.reviewState, s)}>
+                      {reviewLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-muted">{f.why}</p>
+            <p className="mt-2 font-mono text-[11px] text-subtle">{f.reasonCodes.join(" · ")}</p>
+            {f.missingEvidence?.length ? (
+              <p className="mt-1 text-xs text-warn">Missing: {f.missingEvidence.join("; ")}</p>
+            ) : null}
+            <ul className="mt-2 space-y-1 font-mono text-xs text-subtle">
+              {f.evidence.filter(Boolean).map((e) => (
+                <li key={e} className="truncate">
+                  {e}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs leading-relaxed text-fg">{f.how}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
