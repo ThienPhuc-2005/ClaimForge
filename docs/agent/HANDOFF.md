@@ -1,6 +1,6 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · Verified base SHA `b7665b7979e0aa92eee5245fd941d534f19f2541` (pre-session). Session changes are uncommitted in the Build workspace until pushed.
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · **HEAD `7246f43`** (P0.1 commit). Verified base before session: `b7665b7`.
 2. **Milestone:** v0.9 Core Hardening · **item:** P0.1 Canonical Evidence / Policy trust boundary (first vertical slice).
 3. **Session goal:** Baseline audit + `docs/agent/` bootstrap + P0.1 trust boundary so request body / unverified JWT cannot yield BOLA `confirmed`.
 4. **Done:**
