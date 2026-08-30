@@ -19,3 +19,7 @@ Inventory and owner-object ids that equal any captured JWT subject (even unverif
 ## ADR-005 — PDF is a generated text PDF
 
 No PDF library in the tree. P0.2 ships a PDF 1.4 Helvetica text dump for canaries and offline share. Layout quality is P3.
+
+## ADR-006 — Replay wipes source credentials then attaches one actor set
+
+BOLA replay used to keep leftover Cookie when swapping Bearer. P0.3 strips every credential-class header (Authorization, Proxy-Authorization, Cookie, Set-Cookie, API-Key variants, CSRF, token-like, workspace extras) plus secret query/body fields, then attaches only `extractActorCredentials` for the selected actor. Mixing Cookie+Bearer from the *same* actor is allowed; mixing two actors is not. UI diffs are masked (2-char prefix). Curl copy is the lab artifact and keeps the selected set in full.

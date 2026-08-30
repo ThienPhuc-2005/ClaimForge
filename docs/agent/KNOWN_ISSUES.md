@@ -1,4 +1,5 @@
 - **P0.2 remaining (low):** PDF is a single-page text dump, not a designed report. Custom secret-key lists have no UI.
-- **P0.3 gap (medium):** Replay does not strip CSRF / X-API-Key / workspace-configured credential headers yet.
+- **P0.3 remaining (low):** Extra credential header names have no policy editor; pass `ReplayCredentialPolicy.extraHeaderNames` in code. Copy curl still includes selected-actor secrets.
 - **P0.1 gap (medium):** No policy editor UI; `DEFAULT_POLICY` only.
+- **P0.4 gap (medium):** Logout heuristics outside lab stay suspicion; multi-device/session not fully modeled.
 - **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only — not full spec P4 matrix.

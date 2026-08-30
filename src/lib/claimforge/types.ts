@@ -179,6 +179,9 @@ export interface ReplayItem {
   note: string;
   curl: string;
   raw: string;
+  credentialSource?: { actor: string; kinds: string[] };
+  strippedHeaders?: string[];
+  headerDiff?: { name: string; before: string; after: string }[];
 }
 
 export type GraphNodeKind = "actor" | "subject" | "object";

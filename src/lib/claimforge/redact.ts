@@ -85,7 +85,17 @@ export function redactJwtToken(j: JwtToken): JwtToken {
 }
 
 export function redactReplay(r: ReplayItem): ReplayItem {
-  return { ...r, curl: redactText(r.curl), raw: redactText(r.raw), note: redactText(r.note) };
+  return {
+    ...r,
+    curl: redactText(r.curl),
+    raw: redactText(r.raw),
+    note: redactText(r.note),
+    headerDiff: r.headerDiff?.map((d) => ({
+      name: d.name,
+      before: redactText(d.before),
+      after: redactText(d.after),
+    })),
+  };
 }
 
 export function redactRequest(r: CapturedRequest): CapturedRequest {

@@ -1,5 +1,12 @@
 # Session log
 
+## 2026-08-30 — P0.3 replay credential boundary
+
+- `stripSourceCredentials` + `attachActorCredentials` + mixed-header adversarial tests.
+- Playbook BOLA/swap/forge go through the boundary. UI: masked diff, curl behind details.
+- Desk JSON/MD serialize ReportDTO only (`renderReportJson(toReportDTO)` / `engagementMarkdown`).
+- 101 tests green. Next: P0.4 logout/session.
+
 ## 2026-08-30 — P0.2 ReportDTO
 
 - Allowlist ReportDTO; exporters no longer emit raw captures or JWT payload.

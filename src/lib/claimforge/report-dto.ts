@@ -65,7 +65,17 @@ export interface ReportDTO {
   loot: { kind: string; severity: string; label: string; value: string; where: string; actor: string }[];
   wordlists: { ids: string[]; emails: string[]; roles: string[]; hosts: string[] };
   paths: Workspace["paths"];
-  replays: { id: string; title: string; severity: string; note: string; curl: string; raw: string }[];
+  replays: {
+    id: string;
+    title: string;
+    severity: string;
+    note: string;
+    curl: string;
+    raw: string;
+    credentialSource?: { actor: string; kinds: string[] };
+    strippedHeaders?: string[];
+    headerDiff?: { name: string; before: string; after: string }[];
+  }[];
   surface: {
     method: string;
     template: string;
@@ -199,6 +209,13 @@ export function toReportDTO(ws: Workspace, generated = new Date().toISOString())
       note: redactText(r.note),
       curl: redactText(r.curl),
       raw: redactText(r.raw),
+      credentialSource: r.credentialSource,
+      strippedHeaders: r.strippedHeaders,
+      headerDiff: r.headerDiff?.map((d) => ({
+        name: d.name,
+        before: redactText(d.before),
+        after: redactText(d.after),
+      })),
     })),
     surface: safe.surface.map((s) => ({
       method: s.method,

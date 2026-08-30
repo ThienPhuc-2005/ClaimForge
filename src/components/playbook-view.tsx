@@ -8,6 +8,7 @@ export function PlaybookView() {
     <div className="flex flex-col gap-5">
       <p className="text-xs leading-relaxed text-muted">
         Kill chain from this capture. Curls are for your interceptor / authorized lab — this app never fires them.
+        Replay wipes source credentials, then attaches only the selected actor set. Values below are masked.
       </p>
       <ol className="flex flex-col gap-3">
         {workspace.paths.map((p, i) => (
@@ -42,7 +43,39 @@ export function PlaybookView() {
                 <h3 className="text-sm font-medium">{r.title}</h3>
               </div>
               <p className="mt-1 text-xs text-muted">{r.note}</p>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-fg">{r.curl}</pre>
+              {r.credentialSource && (
+                <p className="mt-2 font-mono text-[11px] text-muted">
+                  Credential source: actor {r.credentialSource.actor}
+                  {r.credentialSource.kinds.length ? ` · ${r.credentialSource.kinds.join(", ")}` : ""}
+                </p>
+              )}
+              {r.headerDiff && r.headerDiff.length > 0 && (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-left font-mono text-[11px]">
+                    <caption className="sr-only">Credential header diff (masked)</caption>
+                    <thead>
+                      <tr className="text-muted">
+                        <th className="py-1 pr-3 font-medium">Header</th>
+                        <th className="py-1 pr-3 font-medium">Before</th>
+                        <th className="py-1 font-medium">After</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {r.headerDiff.map((d) => (
+                        <tr key={d.name} className="border-t border-border">
+                          <td className="py-1 pr-3">{d.name}</td>
+                          <td className="py-1 pr-3 text-muted">{d.before}</td>
+                          <td className="py-1">{d.after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-muted">Show curl (contains selected actor secrets)</summary>
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-fg">{r.curl}</pre>
+              </details>
               <div className="mt-2 flex flex-wrap gap-2">
                 <CopyBtn text={r.curl} label="Copy curl" />
                 <CopyBtn text={r.raw} label="Copy raw HTTP" />

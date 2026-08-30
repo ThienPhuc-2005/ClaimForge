@@ -1,16 +1,16 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · session base `11c2051`. Push will move HEAD.
-2. **Milestone:** v0.9 Core Hardening · **item:** P0.2 Canonical ReportDTO (this session).
-3. **Session goal:** ReportDTO allowlist; exporters JSON/MD/HTML/PDF only see redacted DTO; canary tests.
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · **Verified base SHA** `35b2eff` · this session `ef66042`.
+2. **Milestone:** v0.9 Core Hardening · **item:** P0.3 Replay credential boundary (this session).
+3. **Session goal:** Wipe all source credentials before attaching the selected actor set; mixed Authorization+Cookie+API-Key+CSRF must not mix two sessions. Desk JSON/MD emit ReportDTO only.
 4. **Done:**
-   - `toReportDTO` / `buildReport` — no aRaw, requests, jwt payload/raw, cookie values, diff samples.
-   - Renderers: JSON, Markdown, HTML (escaped), minimal PDF 1.4.
-   - CWE/OWASP + CVSS draft on findings; redaction preview field.
-   - Canaries in `p0-report-dto.test.ts`.
-5. **Not done:** Policy editor, P0.3 replay credential matrix, Team/OIDC. PDF is a text dump not a paginated layout.
-6. **Tests:** `npm run test:claimforge` 96 pass; typecheck; lint. See `TEST_STATUS.md`.
-7. **Risks:** CVSS is always draft. Custom workspace secret-key lists not yet a UI. PDF has no embedded fonts beyond Helvetica.
+   - `replay-credentials.ts` — strip Authorization, Proxy-Authorization, Cookie, Set-Cookie, API-Key variants, CSRF headers, token-like headers, workspace extras, secret query/body fields; then attach one actor set.
+   - Playbook BOLA/swap/forge replays use the boundary; UI shows masked source + header diff; curl hidden behind details.
+   - Desk Export JSON = `renderReportJson(toReportDTO)`; Export MD = redacted markdown. No `requests` / raw HAR on the DTO.
+   - Tests: `p0-replay-credentials.test.ts` + playbook updates.
+5. **Not done:** Policy editor UI, P0.4 logout multi-session, P0.5 forge Unsigned/Signed/Stale enum, P0.6 JWKS SSRF, Team/OIDC.
+6. **Tests:** `npm run test:claimforge` 101 pass; typecheck; lint. See `TEST_STATUS.md`.
+7. **Risks:** Masked diff still shows 2-char prefix. Curl copy includes full selected-actor secrets by design. Extra header names have no UI (pass via `ReplayCredentialPolicy.extraHeaderNames`).
 8. **Working tree:** sandbox dirty until push.
-9. **Next step only:** P0.3 Replay credential boundary — strip all source credentials before attaching the selected actor set; UI source/diff without full secrets. No Team backend.
-10. **Next-session prompt:** Continue from repo. Read `docs/agent/HANDOFF.md`. Only implement P0.3 replay credential wipe + tests for mixed Authorization/Cookie/API-Key/CSRF. Update handoff before exit.
+9. **Next step only:** P0.4 Session/logout — track credentials sent on logout, multi-session, heuristic vs Confirmed. No Team backend.
+10. **Next-session prompt:** Continue from repo. Read `docs/agent/HANDOFF.md`. Only implement P0.4 logout/session model + regressions. Update handoff before exit.

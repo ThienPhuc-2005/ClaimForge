@@ -15,7 +15,7 @@ import { PlaybookView } from "@/components/playbook-view";
 import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
-import { engagementMarkdown, exportReportJson } from "@/lib/claimforge/report.ts";
+import { engagementMarkdown, renderReportJson, toReportDTO } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import {
   deskPanelLabelledBy,
@@ -67,7 +67,7 @@ function Home() {
   const high = workspace.findings.filter((f) => f.severity === "high").length;
 
   function exportReport() {
-    const blob = new Blob([JSON.stringify(exportReportJson(workspace), null, 2)], { type: "application/json" });
+    const blob = new Blob([renderReportJson(toReportDTO(workspace))], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
