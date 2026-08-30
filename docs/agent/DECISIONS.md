@@ -22,8 +22,12 @@ No PDF library in the tree. P0.2 ships a PDF 1.4 Helvetica text dump for canarie
 
 ## ADR-006 — Replay wipes source credentials then attaches one actor set
 
-BOLA replay used to keep leftover Cookie when swapping Bearer. P0.3 strips every credential-class header (Authorization, Proxy-Authorization, Cookie, Set-Cookie, API-Key variants, CSRF, token-like, workspace extras) plus secret query/body fields, then attaches only `extractActorCredentials` for the selected actor. Mixing Cookie+Bearer from the *same* actor is allowed; mixing two actors is not. UI diffs are masked (2-char prefix). Curl copy is the lab artifact and keeps the selected set in full.
+BOLA replay used to keep leftover Cookie when swapping Bearer. P0.3 strips every credential-class header, then attaches only the selected actor set. Mixing two actors is not allowed.
 
 ## ADR-007 — Logout revokes only credentials on that request
 
-Prior logic marked every token ever seen for the actor as revoked on any logout. P0.4 treats each bearer, session cookie, and API-key as its own session. Sibling device cookies/bearers stay live. Public routes whose path contains "logout" and logout requests with no credentials are not Confirmed. Lab + 2xx logout + same credential 2xx afterwards remains Confirmed.
+Each bearer, session cookie, and API-key is its own session. Sibling devices stay live. Public logout-named routes and unauthenticated logout are not Confirmed.
+
+## ADR-008 — Forge signed output is revision-bound
+
+A signed compact JWT is valid to copy only while `signedAtRevision === revision`. Any change to header, payload, alg, HMAC secret, public PEM, JWKS URL, kid, issuer, or audience bumps revision and labels the previous signature Stale. The unsigned draft stays copyable.

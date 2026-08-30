@@ -1,5 +1,11 @@
 # Session log
 
+## 2026-08-30 — P0.5 forge revision machine
+
+- Unsigned draft / Signed output / Stale output.
+- Changing header/payload/alg/HMAC/PEM/JWKS/kid/iss/aud voids signed copy.
+- 117 tests green. Next: P0.6 JWKS network.
+
 ## 2026-08-30 — P0.4 session/logout credential scope
 
 - Logout revokes only credentials on that request (bearer/cookie/api-key), not every token the actor ever used.

@@ -1,6 +1,5 @@
-- **P0.2 remaining (low):** PDF is a single-page text dump, not a designed report. Custom secret-key lists have no UI.
-- **P0.3 remaining (low):** Extra credential header names have no policy editor; pass `ReplayCredentialPolicy.extraHeaderNames` in code. Copy curl still includes selected-actor secrets.
+- **P0.6 gap (medium):** JWKS fetch is user-initiated but lacks HTTPS/localhost policy, confirm dialog, timeout, size limit, and SSRF checks.
 - **P0.1 gap (medium):** No policy editor UI; `DEFAULT_POLICY` only.
-- **P0.4 remaining (low):** Default logout patterns omit generic `/revoke`. Multi-device is modeled as distinct credential ids, not explicit device objects.
-- **P0.5 gap (medium):** Forge lacks explicit Unsigned/Signed/Stale enum.
-- **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only — not full spec P4 matrix.
+- **P0.2 remaining (low):** PDF is a single-page text dump.
+- **P0.3 remaining (low):** Extra credential header names have no policy editor.
+- **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only.

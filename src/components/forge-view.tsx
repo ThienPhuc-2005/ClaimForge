@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { CopyBtn } from "@/components/copy-btn";
 import { mintJwt, signHs256, inspectJwt, verifyJwtWithKey } from "@/lib/claimforge/jwt.ts";
 import { useForge } from "@/lib/claimforge/store";
+import {
+  applyDraft,
+  canCopySignedAsValid,
+  createForgeMachine,
+  displayToken,
+  FORGE_KIND_LABEL,
+  markSigned,
+  outputKind,
+  snapshotFromDraft,
+  type ForgeMachine,
+} from "@/lib/claimforge/forge-revision.ts";
+import { cn } from "@/lib/utils";
 
 export function ForgeView() {
   const { workspace, aLabel, bLabel } = useForge();
@@ -15,24 +27,73 @@ export function ForgeView() {
   const [jwksUrl, setJwksUrl] = useState("");
   const [issuer, setIssuer] = useState("");
   const [audience, setAudience] = useState("");
-  const [signed, setSigned] = useState<string | null>(null);
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [machine, setMachine] = useState<ForgeMachine>(() => createForgeMachine());
+
+  function syncMachine(next: {
+    header?: string;
+    payload?: string;
+    secret?: string;
+    publicPem?: string;
+    jwksUrl?: string;
+    issuer?: string;
+    audience?: string;
+  }) {
+    const h = next.header ?? header;
+    const p = next.payload ?? payload;
+    const s = next.secret ?? secret;
+    const pem = next.publicPem ?? publicPem;
+    const jwks = next.jwksUrl ?? jwksUrl;
+    const iss = next.issuer ?? issuer;
+    const aud = next.audience ?? audience;
+    setMachine((m) =>
+      applyDraft(
+        m,
+        snapshotFromDraft({
+          header: h,
+          payload: p,
+          hmacSecret: s,
+          publicPem: pem,
+          jwksUrl: jwks,
+          issuer: iss,
+          audience: aud,
+        }),
+      ),
+    );
+  }
 
   useEffect(() => {
     if (!seed) return;
-    setHeader(JSON.stringify(seed.header, null, 2));
-    setPayload(JSON.stringify(seed.payload, null, 2));
-    setSigned(null);
-    setVerifyMsg(null);
-    setIssuer(typeof seed.payload.iss === "string" ? seed.payload.iss : "");
-    setAudience(
+    const h = JSON.stringify(seed.header, null, 2);
+    const p = JSON.stringify(seed.payload, null, 2);
+    const iss = typeof seed.payload.iss === "string" ? seed.payload.iss : "";
+    const aud =
       typeof seed.payload.aud === "string"
         ? seed.payload.aud
         : Array.isArray(seed.payload.aud)
           ? String(seed.payload.aud[0] ?? "")
-          : "",
+          : "";
+    setHeader(h);
+    setPayload(p);
+    setIssuer(iss);
+    setAudience(aud);
+    setVerifyMsg(null);
+    setMachine(
+      createForgeMachine(
+        snapshotFromDraft({
+          header: h,
+          payload: p,
+          hmacSecret: secret,
+          publicPem,
+          jwksUrl,
+          issuer: iss,
+          audience: aud,
+        }),
+      ),
     );
+    // seed swap resets the machine; other fields stay as analyst-entered keys
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed]);
 
   const minted = useMemo(() => {
@@ -50,9 +111,11 @@ export function ForgeView() {
       const h = JSON.parse(header) as Record<string, unknown>;
       const p = JSON.parse(payload) as Record<string, unknown>;
       mut(h, p);
-      setSigned(null);
-      setHeader(JSON.stringify(h, null, 2));
-      setPayload(JSON.stringify(p, null, 2));
+      const nh = JSON.stringify(h, null, 2);
+      const np = JSON.stringify(p, null, 2);
+      setHeader(nh);
+      setPayload(np);
+      syncMachine({ header: nh, payload: np });
     } catch {
       /* invalid JSON — minted.err already surfaces */
     }
@@ -68,7 +131,7 @@ export function ForgeView() {
         return;
       }
       const token = await signHs256(p, secret, h);
-      setSigned(token);
+      setMachine((m) => markSigned(m, token));
       setVerifyMsg("Signed with jose HS256.");
     } catch (e) {
       setVerifyMsg(e instanceof Error ? e.message : "sign failed");
@@ -107,13 +170,28 @@ export function ForgeView() {
     return <p className="p-6 text-sm text-muted">No JWTs in the capture to forge from.</p>;
   }
 
-  const out = signed && !minted.err ? signed : minted.token;
+  const kind = outputKind(machine);
+  const out = minted.err ? "" : displayToken(machine, minted.token);
+  const copySignedOk = canCopySignedAsValid(machine);
 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-muted">
         Mutate claims locally. Verify HS* with a secret or RS256 with a PEM / JWKS. Bind iss and aud when you know them.
-        Copy into a lab proxy — never spray from here.
+        Copy into a lab proxy — never spray from here. Changing header, payload, alg, keys, JWKS, iss, or aud voids a
+        previous signature.
+      </p>
+      <p
+        className={cn(
+          "rounded-md border px-3 py-2 font-mono text-xs",
+          kind === "signed-output" && "border-ok/40 text-ok",
+          kind === "stale-output" && "border-danger/40 text-danger",
+          kind === "unsigned-draft" && "border-border text-muted",
+        )}
+        role="status"
+      >
+        {FORGE_KIND_LABEL[kind]}
+        {kind === "stale-output" ? " — signed compact JWT is not valid for copy. Use the unsigned draft or re-sign." : ""}
       </p>
       <label className="text-xs text-muted">
         Seed
@@ -176,7 +254,10 @@ export function ForgeView() {
           type="password"
           autoComplete="off"
           value={secret}
-          onChange={(e) => setSecret(e.target.value)}
+          onChange={(e) => {
+            setSecret(e.target.value);
+            syncMachine({ secret: e.target.value });
+          }}
           className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
         />
       </label>
@@ -184,7 +265,10 @@ export function ForgeView() {
         RS256 public key (PEM)
         <textarea
           value={publicPem}
-          onChange={(e) => setPublicPem(e.target.value)}
+          onChange={(e) => {
+            setPublicPem(e.target.value);
+            syncMachine({ publicPem: e.target.value });
+          }}
           spellCheck={false}
           aria-label="RS256 public key PEM"
           placeholder="-----BEGIN PUBLIC KEY-----"
@@ -196,7 +280,10 @@ export function ForgeView() {
         <input
           type="url"
           value={jwksUrl}
-          onChange={(e) => setJwksUrl(e.target.value)}
+          onChange={(e) => {
+            setJwksUrl(e.target.value);
+            syncMachine({ jwksUrl: e.target.value });
+          }}
           placeholder="https://lab/.well-known/jwks.json"
           className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
         />
@@ -206,7 +293,10 @@ export function ForgeView() {
           Expected issuer (iss)
           <input
             value={issuer}
-            onChange={(e) => setIssuer(e.target.value)}
+            onChange={(e) => {
+              setIssuer(e.target.value);
+              syncMachine({ issuer: e.target.value });
+            }}
             className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
           />
         </label>
@@ -214,7 +304,10 @@ export function ForgeView() {
           Expected audience (aud)
           <input
             value={audience}
-            onChange={(e) => setAudience(e.target.value)}
+            onChange={(e) => {
+              setAudience(e.target.value);
+              syncMachine({ audience: e.target.value });
+            }}
             className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
           />
         </label>
@@ -230,8 +323,8 @@ export function ForgeView() {
           <textarea
             value={header}
             onChange={(e) => {
-              setSigned(null);
               setHeader(e.target.value);
+              syncMachine({ header: e.target.value });
             }}
             spellCheck={false}
             className="mt-1 h-36 w-full rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
@@ -242,8 +335,8 @@ export function ForgeView() {
           <textarea
             value={payload}
             onChange={(e) => {
-              setSigned(null);
               setPayload(e.target.value);
+              syncMachine({ payload: e.target.value });
             }}
             spellCheck={false}
             className="mt-1 h-36 w-full rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
@@ -254,7 +347,14 @@ export function ForgeView() {
       <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg p-2 font-mono text-xs">
         {out || "—"}
       </pre>
-      <CopyBtn text={out} label="Copy minted JWT" />
+      <div className="flex flex-wrap gap-2">
+        <CopyBtn text={minted.token} label="Copy unsigned draft" disabled={!minted.token} />
+        <CopyBtn
+          text={copySignedOk ? (machine.signedToken ?? "") : ""}
+          label={copySignedOk ? "Copy signed JWT" : "Signed copy blocked (stale or unsigned)"}
+          disabled={!copySignedOk}
+        />
+      </div>
     </div>
   );
 }

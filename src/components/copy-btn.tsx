@@ -2,16 +2,26 @@ import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-export function CopyBtn({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyBtn({
+  text,
+  label = "Copy",
+  disabled = false,
+}: {
+  text: string;
+  label?: string;
+  disabled?: boolean;
+}) {
   const [ok, setOk] = useState(false);
   return (
     <button
       type="button"
+      disabled={disabled}
       aria-label={ok ? "Copied" : label}
       className={cn(
         "inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium",
         "bg-elevated text-fg transition-colors duration-150 hover:border-accent",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        disabled && "cursor-not-allowed opacity-50 hover:border-border",
       )}
       onClick={async () => {
         try {
