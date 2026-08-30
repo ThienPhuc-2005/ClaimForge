@@ -51,6 +51,20 @@ Vulnerable and Fixed implementations store traffic in separate buckets. Import u
 
 Fixed mode signs HS256 with a **server-only** HMAC key (never shipped to the client bundle). Role is taken from the account record, not from JWT claims, so a forged `role=admin` token is rejected even if the caller knows the client code. Logout records the token `jti` (warm-isolate map plus `lab_revoke` when `DATABASE_URL` is set) instead of a process-only `Set` of raw tokens.
 
+## Team mode (P1 — isolation kernel)
+
+Team is **opt-in and self-hosted**. It is not on unless an operator bootstraps a tenant. Captures still parse and score in the browser. P1 does **not** upload HAR/HTTP/JWT/cookies.
+
+When Team collab is used, the server may store policy JSON, review-state maps, and a deep-redacted ReportDTO, each row carrying `tenant_id` from a **verified membership context** — never from client-supplied tenant fields.
+
+Grok Better Auth / `VITE_AUTH_ENABLED` is not the Team identity plane and stays off. Platform `requireUserId` is unsafe to call for Team while auth is off and `DATABASE_URL` is set.
+
+Isolation is application-level (`TenantContext` + `WHERE tenant_id = $ctx`) plus composite foreign keys. PostgreSQL RLS is a future defense-in-depth layer, not currently claimed.
+
+In-browser loot/replay export is a local action; the Team server cannot honestly prevent it.
+
+See [P1_TEAM_ISOLATION.md](./P1_TEAM_ISOLATION.md).
+
 ## Limitations
 
 - Incomplete JSON captures used to recurse (`parseHarLike` ↔ `parseRawHttp`) until the stack overflowed. They now fail per actor with a parse error. Parser fuzz lives in CI.

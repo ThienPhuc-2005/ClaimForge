@@ -1,3 +1,33 @@
+## 2026-08-30 — P1.1 post-mint authority + Team projection
+
+- Independent review reproduced cross-tenant list/get/collab/addMember/delete by mutating `TenantContext.tenantId` or copying the brand symbol on `f3f7878`.
+- Context mint now registers a frozen snapshot in a module-private WeakMap. Repo SQL uses `requireActiveMember` (snapshot + live `team_member` SELECT), never `ctx.tenantId`.
+- Persist is a Team projection: `loot.value` and `replays.raw`/`curl` always `[redacted]`; canaries remain defense-in-depth. No HTTP/OIDC/P1.2.
+
+## 2026-08-30 — P1.1 persist/context hardening
+
+- Removed public `contextFromMember`. Brand is stamped only inside bootstrap (after insert) and resolve (after SELECT). Member objects are not context.
+- ReportDTO persist is a strict schema (unknown fields rejected), then deep-redacted into a new object, then UTF-8/element capped. Same sanitizer on read.
+- Collab write is `INSERT ON CONFLICT DO UPDATE`. Adversarial: api_key, sessionSecret, HTTP under innocuous names, nested unknown fields, oversize Base64, tampered row, concurrent first-write.
+- Scope still P1.1: no HTTP/OIDC/UI/RBAC.
+
+## 2026-08-30 — P1.1 tenant isolation kernel
+
+- Branch `feat/p1-isolation-kernel`. Docs commit already on the branch; this slice is the kernel only.
+- Migration `0003_team_isolation.sql`: tenant / member / workspace / collab with composite PK/FK. No session, OIDC, or audit tables.
+- Repo is pure (no HTTP/UI). Every query takes branded `TenantContext` and scopes `tenant_id = ctx.tenantId`. Bootstrap requires `unlockBootstrap` (timing-safe, secret ≥ 16).
+- Persist allowlist: policy, review, deep-redacted ReportDTO. Compact JWT / live Bearer / HAR / aRaw rejected. Engine `toReportDTO` is persistable (`Bearer [redacted]` is not treated as a live token).
+- Adversarial tests: forged context, caller tenantId, cross-tenant CRUD, composite FK, same user two tenants, fail-closed leak, migration rollback, solo/lab untouched, no platform-auth import.
+- Gates: typecheck, lint, `npm test` 408/404 pass/4 skip, audit 0 high, production build. Skip count still 4.
+- Not started: P1.2 OIDC/sessions. CI is not merge-enforced.
+
+## 2026-08-30 — P1.0 Team isolation architecture
+
+- Confirmed main HEAD `f1ed912`; CI run 20 green (387 tests, 383 pass, 4 skip).
+- Accepted: Team OIDC ≠ Grok Better Auth; `VITE_AUTH_ENABLED=false`; no `authMiddleware`/`requireUserId` on Team.
+- Accepted: P1 does not persist raw HAR/HTTP/JWT/cookie/credentials.
+- Wrote `docs/P1_TEAM_ISOLATION.md` and ADR-017–031. P1.1 kernel follows on `feat/p1-isolation-kernel`. No P1.2.
+
 ## 2026-08-30 — Remainder P0 + CI gates (repair)
 
 - Recorded true HEAD `4fdf31b` first: previous remainder snapshot claimed 387/0 and remainder SHA `2876097`; GitHub Actions run 18 on that HEAD was **379 pass / 8 fail**.
