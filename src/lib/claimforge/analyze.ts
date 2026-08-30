@@ -65,12 +65,12 @@ function collectArtifacts(requests: CapturedRequest[]) {
   return { jwts, cookies };
 }
 
-function buildTimeline(requests: CapturedRequest[]): TimelineEvent[] {
+function buildTimeline(requests: CapturedRequest[], policy: AnalysisPolicy = DEFAULT_POLICY): TimelineEvent[] {
   const sorted = [...requests].sort((a, b) => a.startedAt - b.startedAt);
   const events: TimelineEvent[] = [];
   for (const req of sorted) {
     if (req.method === "PASTE") continue;
-    const { kind, label } = classifyTimeline(req);
+    const { kind, label } = classifyTimeline(req, policy);
     events.push({
       at: req.startedAt,
       actor: req.actor,
@@ -364,20 +364,22 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     }
   }
 
-  for (const hit of tokensAliveAfterLogout(ws.requests)) {
+  for (const hit of tokensAliveAfterLogout(ws.requests, ws.policy)) {
     add({
       severity: hit.confidence === "confirmed" ? "high" : "medium",
       confidence: hit.confidence,
       title: `Session lives after logout · actor ${hit.actor}`,
       why: hit.logoutOk
-        ? `${hit.method} ${hit.path} still returned ${hit.status} with a credential used before a 2xx logout.`
+        ? `${hit.method} ${hit.path} still returned ${hit.status} with the same ${hit.credentialKind} that was sent on logout.`
         : `${hit.method} ${hit.path} still returned ${hit.status} after a logout-shaped request — logout success was not observed, so this is not confirmed.`,
       evidence: [`${hit.method} ${hit.path}`, hit.tokenHint, hit.lab ? "lab host" : "outside lab"],
       template: hit.path,
       how: hit.lab
-        ? "Invalidate server-side sessions and JWT jti on logout. Replay the post-logout request in a lab proxy."
+        ? "Invalidate only the session bound to the credentials on the logout request. Sibling devices must stay valid."
         : "Outside lab this stays Suspicion until the app's logout policy (server revoke / jti denylist) is evidenced.",
-      fingerprint: `logout:${hit.actor}`,
+      fingerprint: `logout:${hit.actor}:${hit.credentialKind}:${hit.tokenHint}`,
+      reasonCodes: hit.reasonCodes,
+      reviewState: hit.confidence === "confirmed" ? "new" : "needs-evidence",
     });
   }
 
@@ -411,7 +413,7 @@ export function analyze(
   const bReq = slimActor(bParsed.requests);
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
-  const timeline = buildTimeline(requests);
+  const timeline = buildTimeline(requests, policy);
   const ownOpts = { policy, declaredLabels: { A: aLabel, B: bLabel } as const };
   const ownedA = ownedObjects(requests, jwts, "A", cookies, ownOpts);
   const ownedB = ownedObjects(requests, jwts, "B", cookies, ownOpts);

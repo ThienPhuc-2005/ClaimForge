@@ -1,5 +1,12 @@
 # Session log
 
+## 2026-08-30 — P0.4 session/logout credential scope
+
+- Logout revokes only credentials on that request (bearer/cookie/api-key), not every token the actor ever used.
+- Public logout-named routes and unauthenticated logout are not Confirmed.
+- Tests: sibling session intact; logout without credential; `/docs/logout`; rotated token not falsely flagged.
+- 105 tests green. Next: P0.5 forge revision machine.
+
 ## 2026-08-30 — P0.3 replay credential boundary
 
 - `stripSourceCredentials` + `attachActorCredentials` + mixed-header adversarial tests.

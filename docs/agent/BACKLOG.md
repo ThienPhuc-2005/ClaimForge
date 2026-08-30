@@ -13,7 +13,7 @@
 | P0.1 | Canonical evidence + policy trust | done (slice) | `policy.ts`, `evidence.ts`, `p0-trust-boundary.test.ts`. No policy editor UI. |
 | P0.2 | Deep redaction + ReportDTO | done (slice) | `report-dto.ts`, JSON/MD/HTML/PDF; canaries. PDF is text-only. Desk JSON/MD now DTO-only. |
 | P0.3 | Replay credential boundary | done (slice) | `replay-credentials.ts`, `p0-replay-credentials.test.ts`, playbook + PlaybookView |
-| P0.4 | Session/logout model | partial | `session.ts` lab-only confirmed |
+| P0.4 | Session/logout model | done (slice) | `session.ts` credential-scoped revoke; `p0-session-logout.test.ts` |
 | P0.5 | Forge revision machine | partial | forge clears signed output; no explicit Unsigned/Signed/Stale enum |
 | P0.6 | JWKS network / SSRF | missing | user-initiated fetch only |
 | P0.7 | Review workflow states | partial | confidence classes exist; reviewState on BOLA findings |

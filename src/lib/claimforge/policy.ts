@@ -15,6 +15,7 @@ export interface AnalysisPolicy {
   requireJwtIss: string[];
   requireJwtAud: string[];
   roleHierarchy: Record<string, string[]>;
+  logoutPathPatterns: string[];
 }
 
 export const DEFAULT_POLICY: AnalysisPolicy = {
@@ -42,9 +43,10 @@ export const DEFAULT_POLICY: AnalysisPolicy = {
   requireJwtIss: [],
   requireJwtAud: [],
   roleHierarchy: {},
+  logoutPathPatterns: ["/(logout|sign-?out|signoff)(/|$|\\b)"],
 };
 
-function anyMatch(path: string, patterns: string[]): boolean {
+export function pathMatches(path: string, patterns: string[]): boolean {
   for (const p of patterns) {
     try {
       if (new RegExp(p, "i").test(path)) return true;
@@ -53,6 +55,10 @@ function anyMatch(path: string, patterns: string[]): boolean {
     }
   }
   return false;
+}
+
+function anyMatch(path: string, patterns: string[]): boolean {
+  return pathMatches(path, patterns);
 }
 
 export function routeClass(path: string, policy: AnalysisPolicy = DEFAULT_POLICY): RouteClass {
