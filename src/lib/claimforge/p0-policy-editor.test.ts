@@ -8,10 +8,13 @@ import {
   clonePolicy,
   DEFAULT_POLICY,
   diffFindingSets,
+  isPrivilegeEscalation,
+  isPrivilegedRole,
   parseRoleHierarchy,
   policyContentFingerprint,
   policyFingerprint,
   roleImplies,
+  validatePolicyPatterns,
 } from "./policy.ts";
 
 function har(entries: object[]) {
@@ -107,9 +110,12 @@ test("custom tenantId ownership field can confirm BOLA", () => {
   assert.ok(confirmedBola(ws).length >= 1);
 });
 
-test("invalid regex in public patterns is skipped, private still confirms", () => {
+test("invalid regex is reported and does not match as a public route", () => {
   const policy = clonePolicy(DEFAULT_POLICY);
   policy.publicPathPatterns = ["(unclosed"];
+  const errors = validatePolicyPatterns(policy);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.pattern, /unclosed/);
   const a = har([
     get("2026-08-30T03:20:00.000Z", "https://shop.lab/api/invoices/5512", 200, "alice", {
       id: 5512,
@@ -132,6 +138,81 @@ test("role hierarchy parse and imply", () => {
   assert.equal(roleImplies(policy, "admin", "viewer"), true);
   assert.equal(roleImplies(policy, "viewer", "admin"), false);
   assert.equal(roleImplies(policy, "admin", "admin"), true);
+  assert.equal(isPrivilegedRole(policy, "admin"), true);
+  assert.equal(isPrivilegedRole(policy, "user"), true);
+  assert.equal(isPrivilegedRole(policy, "viewer"), false);
+  assert.equal(isPrivilegeEscalation(policy, "user", "admin"), true);
+  assert.equal(isPrivilegeEscalation(policy, "admin", "user"), false);
+});
+
+test("mass-assign that climbs declared hierarchy is Confirmed ROLE_ESCALATION", () => {
+  const policy = clonePolicy(DEFAULT_POLICY);
+  policy.roleHierarchy = parseRoleHierarchy("admin: user, viewer");
+  const header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
+  const payload = Buffer.from(JSON.stringify({ sub: "bob", role: "user" }), "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  const token = `${header}.${payload}.`;
+  const a = har([
+    {
+      startedDateTime: "2026-08-30T04:00:00.000Z",
+      request: {
+        method: "PATCH",
+        url: "https://shop.lab/api/users/me",
+        headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+        postData: { text: JSON.stringify({ role: "admin" }) },
+      },
+      response: {
+        status: 200,
+        headers: [],
+        content: { text: JSON.stringify({ id: "bob", role: "admin" }) },
+      },
+    },
+  ]);
+  const ws = analyze(a, "", "alice", "bob", applyPolicyEdit(DEFAULT_POLICY, policy));
+  const hit = ws.findings.find((f) => f.reasonCodes.includes("ROLE_ESCALATION"));
+  assert.ok(hit);
+  assert.equal(hit!.confidence, "confirmed");
+  assert.notEqual(hit!.severity, "critical");
+});
+
+test("JWT privileged-role finding is skipped when the role is not a declared tree parent", () => {
+  const policy = clonePolicy(DEFAULT_POLICY);
+  policy.roleHierarchy = parseRoleHierarchy("lead: user");
+  const header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0";
+  const payload = Buffer.from(JSON.stringify({ sub: "alice", role: "admin" }), "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  const token = `${header}.${payload}.`;
+  const a = har([
+    {
+      startedDateTime: "2026-08-30T05:00:00.000Z",
+      request: {
+        method: "GET",
+        url: "https://shop.lab/api/me",
+        headers: [{ name: "Authorization", value: `Bearer ${token}` }],
+      },
+      response: { status: 200, headers: [], content: { text: JSON.stringify({ id: "alice" }) } },
+    },
+  ]);
+  const skipped = analyze(a, "", "alice", "bob", applyPolicyEdit(DEFAULT_POLICY, policy));
+  assert.ok(!skipped.findings.some((f) => f.reasonCodes.includes("JWT_PRIVILEGED_ROLE")));
+
+  policy.roleHierarchy = parseRoleHierarchy("admin: user");
+  const scored = analyze(a, "", "alice", "bob", applyPolicyEdit(DEFAULT_POLICY, policy));
+  assert.ok(scored.findings.some((f) => f.reasonCodes.includes("JWT_PRIVILEGED_ROLE")));
+});
+
+test("empty hierarchy does not confirm mass-assign role write (demo regression)", () => {
+  const ws = analyze(demoActorA(), demoActorB(), "alice", "bob");
+  const mass = ws.findings.filter((f) => f.reasonCodes.includes("MASS_ASSIGN_HONORED"));
+  assert.ok(mass.length >= 1);
+  assert.ok(mass.every((f) => f.confidence === "observation"));
+  assert.ok(mass.every((f) => !f.reasonCodes.includes("ROLE_ESCALATION")));
 });
 
 test("deny status 404 from policy is not success", () => {

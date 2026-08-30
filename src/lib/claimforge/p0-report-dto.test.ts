@@ -187,5 +187,27 @@ test("HTML escapes markup; markdown strips fence breakers; formulas prefixed", (
 test("workspace helpers export html/pdf without throwing", () => {
   const ws = analyze(demoActorA(), demoActorB(), "alice", "bob");
   assert.match(exportReportHtml(ws), /ClaimForge/);
-  assert.ok(exportReportPdf(ws).byteLength > 80);
+  const pdf = exportReportPdf(ws);
+  assert.ok(pdf.byteLength > 80);
+  const text = new TextDecoder().decode(pdf);
+  assert.match(text, /%PDF-1\.4/);
+  assert.match(text, /Findings/);
+  assert.match(text, /Kill chain/);
+  assert.match(text, /confirmed|observation|suspicion/);
+});
+
+test("PDF paginates instead of dumping one truncated page", () => {
+  const dto = buildReport(analyze(demoActorA(), demoActorB(), "alice", "bob"));
+  const seed = dto.findings[0]!;
+  dto.findings = Array.from({ length: 40 }, (_, i) => ({
+    ...seed,
+    id: `F${i}`,
+    title: `Finding ${i} long title for wrap`,
+    why: `Why for finding ${i}: ownership and cross-actor access need a second look in the lab.`,
+  }));
+  const pdf = renderReportPdf(dto);
+  const text = new TextDecoder().decode(pdf);
+  assert.match(text, /\/Count [2-9]/);
+  assert.match(text, /Why for finding/);
+  assert.match(text, /Finding 39/);
 });

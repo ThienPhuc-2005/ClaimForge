@@ -1,4 +1,3 @@
-- **P0.1 remaining (low):** Role hierarchy is declared and parsed but does not yet change finding scores.
-- **P0.6 remaining (low):** DNS rebinding not fully solvable in-browser; team allowlist has no UI.
-- **P0.2 remaining (low):** PDF is a single-page text dump.
-- **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only.
+- **P0.6 remaining (low):** DNS rebinding is not fully solvable in-browser; fetch cannot pin resolved IPs across redirects.
+- **P0.2 remaining (low):** PDF is paginated Helvetica 1.4, not a designed layout. Good enough for canaries and offline share; visual polish is P3.
+- **Prod preview CSP (low):** `connect-src` includes `http://[::1]:*`, which Chromium ignores as an invalid source. Content matches dev; not a remainder regression.

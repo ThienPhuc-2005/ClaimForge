@@ -48,6 +48,22 @@ export const P0_GATES: P0Gate[] = [
     evidenceTest: "p0-adversarial-gate.test.ts:GATE P0.1 path segment is not ownership",
   },
   {
+    id: "P0.1-invalid-regex",
+    p0: "P0.1",
+    bug: "Invalid policy regex skipped silently and could misclassify routes",
+    before: "Bad pattern swallowed; editor applied anyway",
+    after: "validatePolicyPatterns reports the field; Apply does not re-run",
+    evidenceTest: "p0-policy-editor.test.ts:invalid regex is reported and does not match as a public route",
+  },
+  {
+    id: "P0.1-role-hierarchy-scoring",
+    p0: "P0.1",
+    bug: "Role hierarchy stored but never scored",
+    before: "user→admin mass-assign stayed Observation; JWT admin heuristic always fired",
+    after: "Declared climb is Confirmed ROLE_ESCALATION (not Critical); empty tree never escalates",
+    evidenceTest: "p0-policy-editor.test.ts:mass-assign that climbs declared hierarchy is Confirmed ROLE_ESCALATION",
+  },
+  {
     id: "P0.2-allowlist-dto",
     p0: "P0.2",
     bug: "Exporters serialized raw HAR, JWT payload, cookie values",
@@ -78,6 +94,14 @@ export const P0_GATES: P0Gate[] = [
     before: "Markdown wordlist contained a leading =HYPERLINK",
     after: "Wordlist entries are formula-neutralized",
     evidenceTest: "p0-adversarial-gate.test.ts:GATE P0.2 wordlist formulas are neutralized in markdown",
+  },
+  {
+    id: "P0.2-pdf-pagination",
+    p0: "P0.2",
+    bug: "PDF was a one-page truncated text dump",
+    before: "Long reports lost findings after page 1",
+    after: "PDF paginates; includes kill chain, findings, why, loot",
+    evidenceTest: "p0-report-dto.test.ts:PDF paginates instead of dumping one truncated page",
   },
   {
     id: "P0.3-mixed-sessions",
@@ -198,6 +222,14 @@ export const P0_GATES: P0Gate[] = [
     before: "audit JSON contained RSA n/e",
     after: "Audit is hostname/status/bytes only",
     evidenceTest: "p0-adversarial-gate.test.ts:GATE P0.6 audit must not contain JWK material",
+  },
+  {
+    id: "P0.6-allowlist-closed-set",
+    p0: "P0.6",
+    bug: "JWKS hostname allowlist only bound in teamMode",
+    before: "Solo mode ignored allowlist; subdomains inherited; redirect hop skipped the list",
+    after: "Non-empty allowlist is a closed exact-hostname set in every mode; every hop rechecked",
+    evidenceTest: "p0-jwks-fetch.test.ts:non-empty allowlist is a closed set in solo mode",
   },
   {
     id: "P0.7-type-name-not-critical",

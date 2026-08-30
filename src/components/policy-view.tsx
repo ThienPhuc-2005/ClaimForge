@@ -51,6 +51,8 @@ function fromPolicy(p: AnalysisPolicy) {
     requireJwtAud: p.requireJwtAud.join("\n"),
     roleHierarchy: formatRoleHierarchy(p.roleHierarchy),
     logoutPathPatterns: p.logoutPathPatterns.join("\n"),
+    jwksHostnameAllowlist: (p.jwksHostnameAllowlist ?? []).join("\n"),
+    jwksTeamMode: Boolean(p.jwksTeamMode),
   };
 }
 
@@ -69,11 +71,13 @@ function toPolicy(d: ReturnType<typeof fromPolicy>): AnalysisPolicy {
     requireJwtAud: parseLineList(d.requireJwtAud),
     roleHierarchy: parseRoleHierarchy(d.roleHierarchy),
     logoutPathPatterns: parseLineList(d.logoutPathPatterns),
+    jwksHostnameAllowlist: parseLineList(d.jwksHostnameAllowlist),
+    jwksTeamMode: d.jwksTeamMode,
   };
 }
 
 export function PolicyView() {
-  const { policy, applyPolicy, resetPolicy, findingDelta, analyzing, workspace } = useForge();
+  const { policy, applyPolicy, resetPolicy, findingDelta, analyzing, workspace, policyErrors } = useForge();
   const [draft, setDraft] = useState(() => fromPolicy(policy));
 
   useEffect(() => {
@@ -118,6 +122,15 @@ export function PolicyView() {
           Reset default
         </button>
       </div>
+      {policyErrors.length ? (
+        <ul className="rounded-md border border-danger/40 bg-elevated px-3 py-2 text-sm text-danger" role="alert">
+          {policyErrors.map((err) => (
+            <li key={`${err.field}:${err.pattern}`}>
+              {err.label}: invalid regex <span className="font-mono">{err.pattern}</span> — {err.error}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
         <Field
@@ -187,10 +200,25 @@ export function PolicyView() {
         />
         <Field
           label="Role hierarchy"
-          hint="admin: user, viewer — one parent per line."
+          hint="admin: user, viewer — one parent per line. Honored role writes that climb this tree become Confirmed."
           value={draft.roleHierarchy}
           onChange={(v) => patch("roleHierarchy", v)}
         />
+        <Field
+          label="JWKS hostname allowlist"
+          hint="When non-empty, only these exact hostnames can be fetched (every redirect hop). Subdomains do not inherit."
+          value={draft.jwksHostnameAllowlist}
+          onChange={(v) => patch("jwksHostnameAllowlist", v)}
+        />
+        <label className="flex min-h-11 items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            className="size-4 accent-accent"
+            checked={draft.jwksTeamMode}
+            onChange={(e) => patch("jwksTeamMode", e.target.checked)}
+          />
+          JWKS team mode (block RFC1918, link-local, metadata, and loopback unless allowlisted)
+        </label>
       </div>
 
       <section aria-label="Policy re-run changelog" className="rounded-md border border-border bg-elevated p-3">

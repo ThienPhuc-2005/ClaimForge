@@ -17,8 +17,9 @@
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "test:claimforge": "node --experimental-strip-types --test src/lib/claimforge/*.test.ts src/lib/lab/engine.test.ts src/lib/security-headers.test.ts",
-    "test": "npm run test:claimforge",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\"",
     "test:e2e": "node scripts/e2e-desk.mjs",
+    "audit:deps": "npm audit --audit-level=high",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

@@ -11,7 +11,9 @@ import {
   clonePolicy,
   DEFAULT_POLICY,
   diffFindingSets,
+  validatePolicyPatterns,
   type AnalysisPolicy,
+  type PolicyPatternError,
   type PolicyRerunChange,
 } from "./policy.ts";
 
@@ -42,13 +44,14 @@ interface ForgeState {
   reviewByFingerprint: Record<string, ReviewState>;
   policy: AnalysisPolicy;
   findingDelta: PolicyRerunChange[];
+  policyErrors: PolicyPatternError[];
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
   setLabel: (side: "a" | "b", label: string) => void;
   setTab: (tab: ForgeState["tab"]) => void;
   setPersistCaptures: (v: boolean) => void;
   setImportError: (msg: string | null) => void;
   setFindingReview: (fingerprint: string, to: ReviewState) => boolean;
-  applyPolicy: (draft: AnalysisPolicy) => void;
+  applyPolicy: (draft: AnalysisPolicy) => boolean;
   resetPolicy: () => void;
   loadDemo: () => void;
   clearAll: () => void;
@@ -116,6 +119,7 @@ export const useForge = create<ForgeState>()(
       reviewByFingerprint: {},
       policy: clonePolicy(DEFAULT_POLICY),
       findingDelta: [],
+      policyErrors: [],
       setActor: (side, raw, immediate) => {
         if (raw.length > MAX_CAPTURE_BYTES) {
           set({ importError: `Capture exceeds ${Math.round(MAX_CAPTURE_BYTES / (1024 * 1024))} MB limit.` });
@@ -164,15 +168,21 @@ export const useForge = create<ForgeState>()(
         return true;
       },
       applyPolicy: (draft) => {
+        const errors = validatePolicyPatterns(draft);
+        if (errors.length) {
+          set({ policyErrors: errors });
+          return false;
+        }
         const policy = applyPolicyEdit(get().policy, draft);
         const prevFindings = get().workspace.findings;
-        set({ policy });
+        set({ policy, policyErrors: [] });
         runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
+        return true;
       },
       resetPolicy: () => {
         const policy = clonePolicy(DEFAULT_POLICY);
         const prevFindings = get().workspace.findings;
-        set({ policy });
+        set({ policy, policyErrors: [] });
         runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
       },
       loadDemo: () => {
@@ -239,7 +249,10 @@ export const useForge = create<ForgeState>()(
         if (!state) return;
         if (!state.reviewByFingerprint) state.reviewByFingerprint = {};
         if (!state.policy) state.policy = clonePolicy(DEFAULT_POLICY);
+        if (!state.policy.jwksHostnameAllowlist) state.policy.jwksHostnameAllowlist = [];
+        if (state.policy.jwksTeamMode == null) state.policy.jwksTeamMode = false;
         if (!state.findingDelta) state.findingDelta = [];
+        if (!state.policyErrors) state.policyErrors = [];
         if ((state.tab as string) === "artifacts") state.tab = "findings";
         const busy = state.analyzing || state.workspace.requests.length > 0;
         if (!state.persistCaptures && !busy) {

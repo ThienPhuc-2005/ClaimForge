@@ -18,6 +18,8 @@ export interface AnalysisPolicy {
   requireJwtAud: string[];
   roleHierarchy: Record<string, string[]>;
   logoutPathPatterns: string[];
+  jwksHostnameAllowlist: string[];
+  jwksTeamMode: boolean;
 }
 
 export const DEFAULT_POLICY: AnalysisPolicy = {
@@ -46,6 +48,8 @@ export const DEFAULT_POLICY: AnalysisPolicy = {
   requireJwtAud: [],
   roleHierarchy: {},
   logoutPathPatterns: ["/(logout|sign-?out|signoff)(/|$|\\b)"],
+  jwksHostnameAllowlist: [],
+  jwksTeamMode: false,
 };
 
 export function pathMatches(path: string, patterns: string[]): boolean {
@@ -111,6 +115,8 @@ export function clonePolicy(policy: AnalysisPolicy): AnalysisPolicy {
     requireJwtAud: [...policy.requireJwtAud],
     roleHierarchy: Object.fromEntries(Object.entries(policy.roleHierarchy).map(([k, v]) => [k, [...v]])),
     logoutPathPatterns: [...policy.logoutPathPatterns],
+    jwksHostnameAllowlist: [...(policy.jwksHostnameAllowlist ?? [])],
+    jwksTeamMode: Boolean(policy.jwksTeamMode),
   };
 }
 
@@ -128,6 +134,8 @@ function canonBody(policy: AnalysisPolicy): string {
     requireJwtAud: policy.requireJwtAud,
     roleHierarchy: policy.roleHierarchy,
     logoutPathPatterns: policy.logoutPathPatterns,
+    jwksHostnameAllowlist: policy.jwksHostnameAllowlist ?? [],
+    jwksTeamMode: Boolean(policy.jwksTeamMode),
   });
 }
 
@@ -188,6 +196,7 @@ export function sanitizePolicy(draft: AnalysisPolicy): AnalysisPolicy {
   next.version = next.version.trim() || "policy-1";
   next.trustedOwnershipFields = next.trustedOwnershipFields.map((s) => s.toLowerCase());
   next.inventoryFields = next.inventoryFields.map((s) => s.trim()).filter(Boolean);
+  next.jwksHostnameAllowlist = (next.jwksHostnameAllowlist ?? []).map((s) => s.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean);
   return next;
 }
 
@@ -214,6 +223,62 @@ export function roleImplies(policy: AnalysisPolicy, holder: string, needed: stri
     return children.includes(needed) || children.some(walk);
   };
   return walk(holder);
+}
+
+export function hierarchyConfigured(policy: AnalysisPolicy): boolean {
+  return Object.keys(policy.roleHierarchy).length > 0;
+}
+
+/** Superior role in the declared tree (has descendants). Empty tree falls back to name heuristics. */
+export function isPrivilegedRole(policy: AnalysisPolicy, role: string): boolean {
+  const r = role.trim();
+  if (!r) return false;
+  if (!hierarchyConfigured(policy)) return /admin|root|superuser/i.test(r);
+  const kids = policy.roleHierarchy[r] ?? policy.roleHierarchy[r.toLowerCase()];
+  return Boolean(kids && kids.length);
+}
+
+/** True when `to` is strictly above `from` in the declared tree. Empty tree never escalates. */
+export function isPrivilegeEscalation(policy: AnalysisPolicy, fromRole: string, toRole: string): boolean {
+  const from = fromRole.trim();
+  const to = toRole.trim();
+  if (!from || !to || from === to) return false;
+  if (!hierarchyConfigured(policy)) return false;
+  return roleImplies(policy, to, from) && !roleImplies(policy, from, to);
+}
+
+export const POLICY_PATTERN_FIELDS = [
+  ["publicPathPatterns", "Public path patterns"],
+  ["sharedPathPatterns", "Shared path patterns"],
+  ["privatePathPatterns", "Private path patterns"],
+  ["identityPathPatterns", "Identity path patterns"],
+  ["logoutPathPatterns", "Logout path patterns"],
+] as const;
+
+export interface PolicyPatternError {
+  field: string;
+  label: string;
+  pattern: string;
+  error: string;
+}
+
+export function validatePolicyPatterns(policy: AnalysisPolicy): PolicyPatternError[] {
+  const out: PolicyPatternError[] = [];
+  for (const [field, label] of POLICY_PATTERN_FIELDS) {
+    for (const pattern of policy[field]) {
+      try {
+        void new RegExp(pattern, "i");
+      } catch (e) {
+        out.push({
+          field,
+          label,
+          pattern,
+          error: e instanceof Error ? e.message : "invalid regular expression",
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export type PolicyRerunKind = "added" | "removed" | "changed";

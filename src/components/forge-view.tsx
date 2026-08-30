@@ -18,6 +18,10 @@ import { cn } from "@/lib/utils";
 
 export function ForgeView() {
   const { workspace, aLabel, bLabel } = useForge();
+  const jwksPolicy = {
+    teamMode: Boolean(workspace.policy?.jwksTeamMode),
+    hostnameAllowlist: workspace.policy?.jwksHostnameAllowlist ?? [],
+  };
   const tokens = workspace.jwts;
   const [idx, setIdx] = useState(0);
   const seed = tokens[idx] ?? tokens[0];
@@ -150,7 +154,7 @@ export function ForgeView() {
       return;
     }
     if (jwksUrl && !jwksConfirmed) {
-      const gate = inspectJwksUrl(jwksUrl);
+      const gate = inspectJwksUrl(jwksUrl, jwksPolicy);
       if (!gate.ok) {
         setVerifyMsg(gate.issues.join("; "));
         return;
@@ -171,6 +175,7 @@ export function ForgeView() {
         publicKeyPem: publicPem || undefined,
         jwksUrl: jwksUrl || undefined,
         jwksConfirmed: jwksUrl ? jwksConfirmed : undefined,
+        jwksPolicy: jwksUrl ? jwksPolicy : undefined,
         issuer: issuer || undefined,
         audience: audience || undefined,
       });
@@ -306,7 +311,7 @@ export function ForgeView() {
       </label>
       {jwksPrompt &&
         (() => {
-          const gate = inspectJwksUrl(jwksUrl);
+          const gate = inspectJwksUrl(jwksUrl, jwksPolicy);
           return (
             <div className="rounded-md border border-warn/40 bg-elevated p-3 text-xs" role="alertdialog" aria-label="Confirm JWKS fetch">
               <p className="font-medium text-fg">Confirm outbound JWKS request</p>

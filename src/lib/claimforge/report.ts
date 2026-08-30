@@ -96,28 +96,95 @@ function pdfEscape(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-/** Minimal PDF 1.4 text dump — no native deps. */
-export function renderReportPdf(dto: ReportDTO): Uint8Array {
-  const lines = [
+function wrapPdfLine(s: string, width = 86): string[] {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t) return [];
+  const out: string[] = [];
+  let rest = t;
+  while (rest.length > width) {
+    let cut = rest.lastIndexOf(" ", width);
+    if (cut < Math.floor(width / 2)) cut = width;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+function pdfReportLines(dto: ReportDTO): string[] {
+  const lines: string[] = [
     "ClaimForge report (redacted)",
     `${dto.actors.A} vs ${dto.actors.B}`,
-    ...dto.redaction.preview,
-    ...dto.findings.map((f) => `[${f.severity}] ${f.title}`),
-  ].flatMap((l) => {
-    const s = l.slice(0, 90);
-    return [s];
-  });
-  const content = lines
-    .map((l, i) => `BT /F1 10 Tf 48 ${760 - i * 14} Td (${pdfEscape(l)}) Tj ET`)
-    .join("\n");
+    `engine ${dto.engineVersion} · policy ${dto.policyVersion} · schema ${dto.schemaVersion}`,
+    `Findings: ${dto.findings.length} · generated ${dto.generated}`,
+    ...dto.redaction.preview.flatMap((p) => wrapPdfLine(`Redaction: ${p}`)),
+    "",
+    "Kill chain",
+  ];
+  for (const p of dto.paths) {
+    lines.push(`- ${p.title}`);
+    lines.push(...wrapPdfLine(p.objective));
+  }
+  lines.push("", "Findings");
+  for (const f of dto.findings) {
+    lines.push("");
+    lines.push(`[${f.severity} · ${f.confidence} · ${f.reviewState}] ${f.title}`.slice(0, 120));
+    lines.push(...wrapPdfLine(f.why));
+    if (f.reasonCodes.length) lines.push(`Reason: ${f.reasonCodes.join(", ")}`.slice(0, 120));
+    for (const e of f.evidence.filter(Boolean).slice(0, 4)) {
+      lines.push(...wrapPdfLine(`- ${e}`));
+    }
+  }
+  lines.push("", "Loot");
+  for (const l of dto.loot.slice(0, 24)) {
+    lines.push(...wrapPdfLine(`${l.label} (${l.kind}) ${l.value}`));
+  }
+  lines.push("", "Replay pack (credentials redacted)");
+  for (const r of dto.replays.slice(0, 16)) {
+    lines.push(...wrapPdfLine(r.title));
+  }
+  return lines;
+}
+
+const PDF_LINES_PER_PAGE = 46;
+
+/** Paginated PDF 1.4 — Helvetica, no native deps. */
+export function renderReportPdf(dto: ReportDTO): Uint8Array {
+  const lines = pdfReportLines(dto);
+  const pages: string[][] = [];
+  for (let i = 0; i < lines.length; i += PDF_LINES_PER_PAGE) {
+    pages.push(lines.slice(i, i + PDF_LINES_PER_PAGE));
+  }
+  if (!pages.length) pages.push(["(empty report)"]);
+
   const objects: string[] = [];
   objects.push("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj");
-  objects.push("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj");
-  objects.push(
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj",
-  );
-  objects.push(`4 0 obj << /Length ${content.length} >> stream\n${content}\nendstream endobj`);
-  objects.push("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj");
+  const pageIds: number[] = [];
+  const fontId = 3;
+  objects.push(""); // placeholder for pages object at index 1
+  objects.push(`${fontId} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj`);
+
+  for (const pageLines of pages) {
+    const ops = [
+      "BT",
+      "/F1 10 Tf",
+      "14 TL",
+      "48 760 Td",
+      ...pageLines.map((l) => `(${pdfEscape(l.slice(0, 120))}) Tj T*`),
+      "ET",
+    ].join("\n");
+    const contentId = objects.length + 1;
+    const pageId = contentId + 1;
+    objects.push(`${contentId} 0 obj << /Length ${ops.length} >> stream\n${ops}\nendstream endobj`);
+    objects.push(
+      `${pageId} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >> endobj`,
+    );
+    pageIds.push(pageId);
+  }
+
+  objects[1] =
+    `2 0 obj << /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >> endobj`;
+
   let body = "%PDF-1.4\n";
   const offsets = [0];
   for (const obj of objects) {

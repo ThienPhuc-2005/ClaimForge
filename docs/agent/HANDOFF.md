@@ -1,15 +1,12 @@
 # ClaimForge handoff
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · verified base `6c3ba6f`.
-2. **Milestone:** v0.9 Core Hardening · **item:** P0.1 policy editor remainder (this session).
-3. **Session goal:** Analyst policy editor + re-run changelog. No Team backend. No app rewrite.
-4. **Done:**
-   - More → Policy editor (patterns, ownership fields, statuses, iss/aud, logout, roles).
-   - Apply bumps version, re-runs analyze, diffs findings by fingerprint.
-   - Policy drives public/shared classification and extra ownership keys.
-5. **Not done:** Role hierarchy scoring, Team OIDC, PDF layout, JWKS DNS pin.
-6. **Tests:** `npm run test:claimforge` 151 pass; typecheck; lint. Browser: invoices-as-public demotes lab BOLA.
-7. **Risks:** Invalid regex is skipped silently. Role hierarchy is data-only.
-8. **Working tree:** dirty until this session's commit.
-9. **Next step only:** P0 is green including the editor. Do **not** start Team unless explicitly asked.
-10. **Next-session prompt:** Continue from repo. Read `docs/agent/HANDOFF.md`. Only start P1 Team if the user asks.
+1. **Repo:** `ThienPhuc-2005/ClaimForge` · branch `main` · **HEAD pending push (remainder commit on `main`)**.
+2. **Milestone:** v0.9 Core Hardening · **item:** remainder P0 + CI gates (done).
+3. **Session goal (done):** Policy regex errors, role-hierarchy scoring, JWKS allowlist boundary, paginated PDF, CI (build + audit + all first-party tests). No Team backend.
+4. **Done:** P0.1–P0.8 including remainder: regex validation UI, role-hierarchy scoring, JWKS closed allowlist in every mode, paginated PDF, CI required gates.
+5. **Not done:** P1 Team/OIDC. DNS rebinding still in-browser limited. PDF layout polish is P3.
+6. **Tests:** `npm test` **387 pass / 0 fail**; `npm run typecheck`; `npm run lint`; `npm run audit:deps` (0 high); `npm run build`.
+7. **Browser:** Load lab → More → Policy: invalid `(unclosed` shows regex error and does not Apply. Hierarchy `admin: user, viewer` changelog: mass-assign observation/high → confirmed/high. JWKS allowlist field present. Export PDF no console errors. Dev smoke desktop+mobile clean.
+8. **Working tree:** clean vs `origin/main` after this push except untracked `attachments/` (spec dump, not part of the app).
+9. **Next step only:** P1 Team backend **only if asked**. Remainder + CI are green.
+10. **CI:** https://github.com/ThienPhuc-2005/ClaimForge/actions

@@ -83,3 +83,57 @@ test("notice describes hostname and data movement before fetch", () => {
   assert.match(n.sends, /credentials omitted/i);
   assert.match(n.receives, /JWK set/i);
 });
+
+test("non-empty allowlist is a closed set in solo mode", () => {
+  const allow = { hostnameAllowlist: ["keys.corp.example"] };
+  assert.equal(inspectJwksUrl("https://keys.corp.example/jwks", allow).ok, true);
+  assert.equal(inspectJwksUrl("https://keys.corp.example./jwks", allow).ok, true);
+  assert.equal(inspectJwksUrl("https://evil.example/jwks", allow).ok, false);
+  assert.equal(inspectJwksUrl("https://corp.example/jwks", allow).ok, false);
+  assert.equal(inspectJwksUrl("https://notkeys.corp.example/jwks", allow).ok, false);
+});
+
+test("team mode blocks IPv6 ULA and link-local", () => {
+  assert.equal(inspectJwksUrl("https://[fd12:3456:789a::1]/jwks", { teamMode: true }).ok, false);
+  assert.equal(inspectJwksUrl("https://[fe80::1]/jwks", { teamMode: true }).ok, false);
+});
+
+test("team mode still blocks RFC1918 even when the IP is listed", () => {
+  const r = inspectJwksUrl("https://10.0.0.5/jwks", {
+    teamMode: true,
+    hostnameAllowlist: ["10.0.0.5"],
+  });
+  assert.equal(r.ok, false);
+  assert.ok(r.issues.some((i) => /private|link-local|metadata/i.test(i)));
+});
+
+test("team mode loopback requires allowlist membership", () => {
+  assert.equal(inspectJwksUrl("http://127.0.0.1/jwks", { teamMode: true }).ok, false);
+  assert.equal(
+    inspectJwksUrl("http://127.0.0.1/jwks", { teamMode: true, hostnameAllowlist: ["127.0.0.1"] }).ok,
+    true,
+  );
+  assert.equal(
+    inspectJwksUrl("http://127.0.0.1/jwks", { teamMode: true, hostnameAllowlist: ["keys.corp.example"] }).ok,
+    false,
+  );
+});
+
+test("redirect hop off the allowlist is denied", async () => {
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    const href = String(input);
+    if (href.includes("keys.corp.example")) {
+      return new Response(null, { status: 302, headers: { location: "https://evil.example/jwks" } });
+    }
+    return jsonResponse({ keys: [] });
+  }) as typeof fetch;
+  await assert.rejects(
+    () =>
+      fetchJwksDocument("https://keys.corp.example/jwks", {
+        confirmed: true,
+        fetchImpl,
+        policy: { hostnameAllowlist: ["keys.corp.example"] },
+      }),
+    /allowlist/i,
+  );
+});

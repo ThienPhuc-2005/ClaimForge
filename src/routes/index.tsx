@@ -16,7 +16,7 @@ import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
 import { PolicyView } from "@/components/policy-view";
-import { engagementMarkdown, renderReportJson, toReportDTO } from "@/lib/claimforge/report.ts";
+import { engagementMarkdown, exportReportPdf, renderReportJson, toReportDTO } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import {
   deskPanelLabelledBy,
@@ -137,6 +137,21 @@ function Home() {
               icon={<Download className="size-4" aria-hidden />}
             >
               Export MD
+            </GhostBtn>
+            <GhostBtn
+              onClick={() => {
+                const bytes = exportReportPdf(workspace);
+                const blob = new Blob([Uint8Array.from(bytes)], { type: "application/pdf" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "claimforge-report.pdf";
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              icon={<Download className="size-4" aria-hidden />}
+            >
+              Export PDF
             </GhostBtn>
             <GhostBtn onClick={clearAll} icon={<Eraser className="size-4" aria-hidden />}>
               Clear

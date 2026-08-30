@@ -1,4 +1,12 @@
-# Session log
+## 2026-08-30 — Remainder P0 + CI gates
+
+- Policy Apply validates regex and surfaces field errors; invalid patterns do not re-run.
+- Role hierarchy scores: JWT priv-role only for tree parents; user→admin mass-assign is Confirmed ROLE_ESCALATION (not Critical). Empty tree never escalates.
+- JWKS allowlist is a closed exact-hostname set in every mode; teamMode still blocks RFC1918/ULA; every redirect hop rechecked.
+- PDF paginates with kill chain, findings, why, evidence, loot.
+- CI: typecheck, lint, `npm test` (all first-party), `audit:deps`, production build.
+- Browser: invalid `(unclosed` blocked; hierarchy Apply changed mass-assign observation/high → confirmed/high; Export PDF no console errors.
+- 387 first-party tests green. Do not start P1 Team.
 
 ## 2026-08-30 — P0.1 policy editor (remainder)
 

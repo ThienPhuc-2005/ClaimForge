@@ -34,7 +34,30 @@ export interface InspectJwksUrl {
 const LOCALHOST = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 function hostOf(u: URL): string {
-  return u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return normalizeHostname(u.hostname);
+}
+
+export function normalizeHostname(host: string): string {
+  return host.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+}
+
+export function hostOnAllowlist(host: string, allowlist?: string[]): boolean {
+  if (!allowlist?.length) return true;
+  const h = normalizeHostname(host);
+  return allowlist.some((entry) => normalizeHostname(entry) === h);
+}
+
+function isIpv6Literal(host: string): boolean {
+  return host.includes(":");
+}
+
+function isPrivateIpv6(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === "::1") return false;
+  if (h.startsWith("fe80:")) return true;
+  if (h.startsWith("fc") || h.startsWith("fd")) return true;
+  if (h.startsWith("ff")) return true;
+  return false;
 }
 
 function isIpv4(host: string): number[] | null {
@@ -48,6 +71,7 @@ function isIpv4(host: string): number[] | null {
 function isPrivateOrLinkLocalOrMetadata(host: string): boolean {
   if (host === "169.254.169.254" || host === "metadata.google.internal" || host === "metadata") return true;
   if (host.endsWith(".internal") || host.endsWith(".local")) return true;
+  if (isIpv6Literal(host) && isPrivateIpv6(host)) return true;
   const ip = isIpv4(host);
   if (!ip) return false;
   const [a, b] = ip;
@@ -105,15 +129,15 @@ export function inspectJwksUrl(raw: string, policy: JwksUrlPolicy = {}): Inspect
   if (host === "169.254.169.254" || host === "metadata.google.internal" || host === "metadata") {
     issues.push("Cloud metadata endpoints are blocked");
   }
+  if (policy.hostnameAllowlist?.length && !hostOnAllowlist(host, policy.hostnameAllowlist)) {
+    issues.push("Hostname is not on the workspace JWKS allowlist");
+  }
   if (policy.teamMode) {
     if (isPrivateOrLinkLocalOrMetadata(host) && !isLoopbackHost(host)) {
       issues.push("Team mode blocks private, link-local, and metadata hosts");
     }
-    if (isLoopbackHost(host) && !policy.hostnameAllowlist?.some((h) => h.toLowerCase() === host)) {
+    if (isLoopbackHost(host) && !policy.hostnameAllowlist?.length) {
       issues.push("Team mode blocks loopback unless the hostname is on the workspace allowlist");
-    }
-    if (policy.hostnameAllowlist?.length && !policy.hostnameAllowlist.some((h) => h.toLowerCase() === host)) {
-      issues.push("Hostname is not on the workspace JWKS allowlist");
     }
   }
   return { ok: issues.length === 0, url, notice, issues };

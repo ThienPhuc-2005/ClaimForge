@@ -12,9 +12,9 @@ import { extractJwtStrings, inspectJwt, jwtSubject } from "./jwt.ts";
 import { parseActorInput, resetParseIds } from "./parse.ts";
 import { MAX_BODY_CHARS, MAX_REQUESTS_PER_ACTOR } from "./limits.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
-import { bolaEvidence } from "./evidence.ts";
+import { bolaEvidence, type ReasonCode } from "./evidence.ts";
 import { fnv1a64Hex } from "./hash.ts";
-import { DEFAULT_POLICY, isDenyStatus, isSuccessStatus, policyFingerprint, type AnalysisPolicy } from "./policy.ts";
+import { DEFAULT_POLICY, isDenyStatus, isPrivilegeEscalation, isPrivilegedRole, isSuccessStatus, policyFingerprint, type AnalysisPolicy } from "./policy.ts";
 import { ENGINE_VERSION, RULE_VERSION } from "./versions.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
@@ -190,6 +190,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     n += 1;
     out.push({ id: `F${n}`, ...finalizeFinding(f) });
   };
+  const policy = ws.policy ?? DEFAULT_POLICY;
 
   for (const jwt of ws.jwts) {
     const kinds = new Map<string, string[]>();
@@ -200,6 +201,10 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       kinds.set(kind, list);
     }
     for (const [kind, issues] of kinds) {
+      if (kind === "priv-role") {
+        const role = String(jwt.payload.role ?? jwt.payload.roles ?? jwt.payload.is_admin ?? "");
+        if (!isPrivilegedRole(policy, role)) continue;
+      }
       const infoOnly = /iss|aud|lifetime/.test(kind);
       const sev: Finding["severity"] =
         kind === "alg-none" || kind === "key-injection" ? "high" : infoOnly ? "info" : "medium";
@@ -361,22 +366,52 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
 
   for (const l of ws.loot) {
     if (l.kind === "cors" || l.kind === "stack" || l.kind === "mass-assign" || l.kind === "key") {
+      const codes: ReasonCode[] = [lootReasonCode(l.kind, l.value)];
+      let confidence: Finding["confidence"] =
+        l.kind === "cors" && /reflected/i.test(l.value) ? "suspicion" : "observation";
+      const severity = l.severity;
+      if (l.kind === "mass-assign") {
+        const actorRole = String(
+          ws.jwts.find((j) => j.actor === l.actor)?.payload.role ??
+            ws.jwts.find((j) => j.actor === l.actor)?.payload.roles ??
+            "",
+        );
+        const req = ws.requests.find((r) => `${r.actor} ${r.method} ${r.path}` === l.where);
+        let assigned: string[] = [];
+        try {
+          const body = req?.requestBody ? (JSON.parse(req.requestBody) as Record<string, unknown>) : null;
+          if (body && typeof body === "object") {
+            assigned = l.value
+              .split(",")
+              .map((k) => String(body[k.trim()] ?? k.trim()))
+              .filter(Boolean);
+          }
+        } catch {
+          assigned = l.value.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+        if (assigned.some((v) => isPrivilegeEscalation(policy, actorRole, v))) {
+          codes.push("ROLE_ESCALATION");
+          confidence = "confirmed";
+        }
+      }
       add({
-        severity: l.severity,
-        confidence: l.kind === "cors" && /reflected/i.test(l.value) ? "suspicion" : "observation",
+        severity,
+        confidence,
         title: `${l.label} · ${l.where}`,
         why: l.value,
         evidence: [l.kind, l.where],
         how:
           l.kind === "mass-assign"
-            ? "In Repeater, toggle one privileged field. If the object mutates, the API binds client-supplied ownership."
+            ? codes.includes("ROLE_ESCALATION")
+              ? "The write honored a role that is strictly above the actor in the declared hierarchy. Confirm the API binds role from the session, not the body."
+              : "In Repeater, toggle one privileged field. If the object mutates, the API binds client-supplied ownership."
             : l.kind === "cors"
               ? corsHow(l.value)
               : l.kind === "stack"
                 ? "Debug traces leak paths and versions — fold into recon, not a live spray from this app."
                 : "Treat keys in captures as compromised for the engagement. Rotate in the lab.",
         fingerprint: `loot:${l.kind}:${l.where}:${l.label}`,
-        reasonCodes: [lootReasonCode(l.kind, l.value)],
+        reasonCodes: codes,
       });
     }
   }
