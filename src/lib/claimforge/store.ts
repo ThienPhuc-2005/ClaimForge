@@ -6,6 +6,14 @@ import { ANALYZE_DEBOUNCE_MS, MAX_CAPTURE_BYTES } from "./limits.ts";
 import { DEMO_A_LABEL, DEMO_B_LABEL, demoActorA, demoActorB } from "./demo.ts";
 import type { ReviewState, Workspace } from "./types.ts";
 import { applyReviewOverrides, applyReviewTransition } from "./review.ts";
+import {
+  applyPolicyEdit,
+  clonePolicy,
+  DEFAULT_POLICY,
+  diffFindingSets,
+  type AnalysisPolicy,
+  type PolicyRerunChange,
+} from "./policy.ts";
 
 export type DeskTab =
   | "findings"
@@ -16,7 +24,8 @@ export type DeskTab =
   | "loot"
   | "timeline"
   | "traffic"
-  | "lab";
+  | "lab"
+  | "policy";
 
 interface ForgeState {
   aLabel: string;
@@ -31,18 +40,22 @@ interface ForgeState {
   tab: DeskTab;
   workspace: Workspace;
   reviewByFingerprint: Record<string, ReviewState>;
+  policy: AnalysisPolicy;
+  findingDelta: PolicyRerunChange[];
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
   setLabel: (side: "a" | "b", label: string) => void;
   setTab: (tab: ForgeState["tab"]) => void;
   setPersistCaptures: (v: boolean) => void;
   setImportError: (msg: string | null) => void;
   setFindingReview: (fingerprint: string, to: ReviewState) => boolean;
+  applyPolicy: (draft: AnalysisPolicy) => void;
+  resetPolicy: () => void;
   loadDemo: () => void;
   clearAll: () => void;
 }
 
-function emptyWs(aLabel: string, bLabel: string): Workspace {
-  return analyze("", "", aLabel, bLabel);
+function emptyWs(aLabel: string, bLabel: string, policy: AnalysisPolicy = DEFAULT_POLICY): Workspace {
+  return analyze("", "", aLabel, bLabel, policy);
 }
 
 function parseFields(ws: Workspace) {
@@ -55,16 +68,26 @@ function parseFields(ws: Workspace) {
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let runGen = 0;
 
-function runAnalyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string, set: (p: Partial<ForgeState>) => void) {
+function runAnalyze(
+  aRaw: string,
+  bRaw: string,
+  aLabel: string,
+  bLabel: string,
+  policy: AnalysisPolicy,
+  set: (p: Partial<ForgeState>) => void,
+  prevFindings?: Workspace["findings"],
+) {
   const gen = (runGen += 1);
   set({ analyzing: true, importError: null });
-  void analyzeAsync(aRaw, bRaw, aLabel, bLabel)
+  void analyzeAsync(aRaw, bRaw, aLabel, bLabel, policy)
     .then((workspace) => {
       if (gen !== runGen) return;
       const overlays = useForge.getState().reviewByFingerprint;
+      const findings = applyReviewOverrides(workspace.findings, overlays);
       set({
-        workspace: { ...workspace, findings: applyReviewOverrides(workspace.findings, overlays) },
+        workspace: { ...workspace, findings },
         analyzing: false,
+        findingDelta: prevFindings ? diffFindingSets(prevFindings, findings) : [],
         ...parseFields(workspace),
       });
     })
@@ -91,6 +114,8 @@ export const useForge = create<ForgeState>()(
       tab: "findings",
       workspace: emptyWs(DEMO_A_LABEL, DEMO_B_LABEL),
       reviewByFingerprint: {},
+      policy: clonePolicy(DEFAULT_POLICY),
+      findingDelta: [],
       setActor: (side, raw, immediate) => {
         if (raw.length > MAX_CAPTURE_BYTES) {
           set({ importError: `Capture exceeds ${Math.round(MAX_CAPTURE_BYTES / (1024 * 1024))} MB limit.` });
@@ -98,8 +123,8 @@ export const useForge = create<ForgeState>()(
         }
         const aRaw = side === "a" ? raw : get().aRaw;
         const bRaw = side === "b" ? raw : get().bRaw;
-        set({ aRaw, bRaw, importError: null });
-        const kick = () => runAnalyze(aRaw, bRaw, get().aLabel, get().bLabel, set);
+        set({ aRaw, bRaw, importError: null, findingDelta: [] });
+        const kick = () => runAnalyze(aRaw, bRaw, get().aLabel, get().bLabel, get().policy, set);
         if (immediate) {
           if (debounceTimer) clearTimeout(debounceTimer);
           kick();
@@ -111,8 +136,8 @@ export const useForge = create<ForgeState>()(
       setLabel: (side, label) => {
         const aLabel = side === "a" ? label : get().aLabel;
         const bLabel = side === "b" ? label : get().bLabel;
-        set({ aLabel, bLabel });
-        runAnalyze(get().aRaw, get().bRaw, aLabel, bLabel, set);
+        set({ aLabel, bLabel, findingDelta: [] });
+        runAnalyze(get().aRaw, get().bRaw, aLabel, bLabel, get().policy, set);
       },
       setTab: (tab) => set({ tab }),
       setPersistCaptures: (persistCaptures) => set({ persistCaptures }),
@@ -138,6 +163,18 @@ export const useForge = create<ForgeState>()(
         });
         return true;
       },
+      applyPolicy: (draft) => {
+        const policy = applyPolicyEdit(get().policy, draft);
+        const prevFindings = get().workspace.findings;
+        set({ policy });
+        runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
+      },
+      resetPolicy: () => {
+        const policy = clonePolicy(DEFAULT_POLICY);
+        const prevFindings = get().workspace.findings;
+        set({ policy });
+        runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
+      },
       loadDemo: () => {
         const aRaw = demoActorA();
         const bRaw = demoActorB();
@@ -148,8 +185,9 @@ export const useForge = create<ForgeState>()(
           bRaw,
           tab: "findings",
           importError: null,
+          findingDelta: [],
         });
-        runAnalyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL, set);
+        runAnalyze(aRaw, bRaw, DEMO_A_LABEL, DEMO_B_LABEL, get().policy, set);
       },
       clearAll: () => {
         cancelAnalyzeJobs("cleared");
@@ -162,7 +200,8 @@ export const useForge = create<ForgeState>()(
           parseErrorB: null,
           analyzing: false,
           reviewByFingerprint: {},
-          workspace: emptyWs(get().aLabel, get().bLabel),
+          findingDelta: [],
+          workspace: emptyWs(get().aLabel, get().bLabel, get().policy),
         });
       },
     }),
@@ -178,6 +217,7 @@ export const useForge = create<ForgeState>()(
               tab: s.tab,
               persistCaptures: true as const,
               reviewByFingerprint: s.reviewByFingerprint,
+              policy: s.policy,
             }
           : {
               aLabel: s.aLabel,
@@ -185,6 +225,7 @@ export const useForge = create<ForgeState>()(
               tab: s.tab,
               persistCaptures: false as const,
               reviewByFingerprint: s.reviewByFingerprint,
+              policy: s.policy,
             },
       onRehydrateStorage: () => (state) => {
         if (typeof localStorage !== "undefined") {
@@ -197,16 +238,20 @@ export const useForge = create<ForgeState>()(
         }
         if (!state) return;
         if (!state.reviewByFingerprint) state.reviewByFingerprint = {};
+        if (!state.policy) state.policy = clonePolicy(DEFAULT_POLICY);
+        if (!state.findingDelta) state.findingDelta = [];
         if ((state.tab as string) === "artifacts") state.tab = "findings";
         const busy = state.analyzing || state.workspace.requests.length > 0;
         if (!state.persistCaptures && !busy) {
           state.aRaw = "";
           state.bRaw = "";
         }
-        if (!busy) state.workspace = emptyWs(state.aLabel, state.bLabel);
+        if (!busy) state.workspace = emptyWs(state.aLabel, state.bLabel, state.policy);
         if ((state.aRaw || state.bRaw) && !state.analyzing) {
           queueMicrotask(() => {
-            runAnalyze(state.aRaw, state.bRaw, state.aLabel, state.bLabel, (p) => useForge.setState(p));
+            runAnalyze(state.aRaw, state.bRaw, state.aLabel, state.bLabel, state.policy, (p) =>
+              useForge.setState(p),
+            );
           });
         }
       },

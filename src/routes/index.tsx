@@ -15,6 +15,7 @@ import { PlaybookView } from "@/components/playbook-view";
 import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
+import { PolicyView } from "@/components/policy-view";
 import { engagementMarkdown, renderReportJson, toReportDTO } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import {
@@ -47,6 +48,7 @@ const MORE_TABS = [
   { id: "timeline", label: "Timeline" },
   { id: "traffic", label: "Traffic" },
   { id: "lab", label: "Victim lab" },
+  { id: "policy", label: "Policy" },
 ] as const;
 
 function Home() {
@@ -228,7 +230,9 @@ function Home() {
             aria-labelledby={labelledBy}
             aria-label={labelledBy ? undefined : panelName}
           >
-            {!workspace.requests.length && tab !== "lab" ? <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} /> : null}
+            {!workspace.requests.length && tab !== "lab" && tab !== "policy" ? (
+              <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} />
+            ) : null}
             {tab === "findings" && workspace.requests.length > 0 && <FindingsList findings={workspace.findings} />}
             {tab === "playbook" && <PlaybookView />}
             {tab === "forge" && <ForgeView />}
@@ -238,6 +242,7 @@ function Home() {
             {tab === "timeline" && <Timeline />}
             {tab === "traffic" && <Traffic />}
             {tab === "lab" && <LabView />}
+            {tab === "policy" && <PolicyView />}
           </div>
         </section>
 

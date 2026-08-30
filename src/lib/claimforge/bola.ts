@@ -1,11 +1,9 @@
 import type { CapturedRequest } from "./types.ts";
 import { pathIds } from "./ids.ts";
 import { MAX_SAME_OBJECT_PAIRS } from "./limits.ts";
+import { DEFAULT_POLICY, routeClass, type AnalysisPolicy } from "./policy.ts";
 
 export type AuthzClass = "observation" | "suspicion" | "confirmed";
-
-const PUBLIC_PATH =
-  /\/(public|catalog|health|status|docs|openapi|swagger|assets|static|feed|marketing|blog)\b/i;
 
 function bodyLooksShared(text?: string): boolean {
   if (!text) return false;
@@ -23,8 +21,13 @@ function bodyLooksShared(text?: string): boolean {
   }
 }
 
-export function looksPublicOrShared(path: string, ...bodies: (string | undefined)[]): boolean {
-  if (PUBLIC_PATH.test(path)) return true;
+export function looksPublicOrShared(
+  path: string,
+  bodies: Array<string | undefined> = [],
+  policy: AnalysisPolicy = DEFAULT_POLICY,
+): boolean {
+  const klass = routeClass(path, policy);
+  if (klass === "public" || klass === "shared") return true;
   return bodies.some((b) => bodyLooksShared(b));
 }
 
@@ -34,8 +37,9 @@ export function classifySameObject(
   bodies: (string | undefined)[],
   ownedA: Set<string>,
   ownedB: Set<string>,
+  policy: AnalysisPolicy = DEFAULT_POLICY,
 ): AuthzClass {
-  if (looksPublicOrShared(path, ...bodies)) return "observation";
+  if (looksPublicOrShared(path, bodies, policy)) return "observation";
   const aOwns = ownedA.has(objectId);
   const bOwns = ownedB.has(objectId);
   if (aOwns && !bOwns) return "confirmed";

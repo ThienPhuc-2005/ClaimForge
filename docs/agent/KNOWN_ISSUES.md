@@ -1,4 +1,4 @@
-- **P0.1 gap (medium):** No policy editor UI.
+- **P0.1 remaining (low):** Role hierarchy is declared and parsed but does not yet change finding scores.
 - **P0.6 remaining (low):** DNS rebinding not fully solvable in-browser; team allowlist has no UI.
 - **P0.2 remaining (low):** PDF is a single-page text dump.
 - **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only.

@@ -48,3 +48,7 @@ Severity never becomes Critical from a finding type name. Observation and Suspic
 ## ADR-011 — P0.8 is a fail-then-pass catalog, not a rewrite
 
 Each P0.1–P0.7 bug is a row in `p0-gates.ts` with `before` (broken engine) and `after` (required behavior), pointing at a test that would fail if the fix is reverted. New gaps (path-as-owner, wordlist formulas, JWKS `credentials:omit`, audit JWK material, CORS `*`+credentials through analyze) live in `p0-adversarial-gate.test.ts`. Product code is unchanged.
+
+## ADR-012 — Policy editor re-runs one engine, does not rewrite the desk
+
+P0.1 remainder is a More-view editor. Public/shared/private/identity patterns, ownership fields, success/deny statuses, JWT iss/aud, logout paths, and role hierarchy all feed the same `AnalysisPolicy` already used by BOLA, session, and ownership. Apply bumps version when content changes, re-runs analyze, and diffs findings by fingerprint (added / removed / changed). Extra ownership field names (e.g. `tenantId`) are allowed; request body/query/path still cannot prove ownership. No Team backend. Primary tabs unchanged.

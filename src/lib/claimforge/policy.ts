@@ -1,4 +1,6 @@
+import type { Finding } from "./types.ts";
 import type { JwtToken } from "./types.ts";
+import { fnv1a64Hex } from "./hash.ts";
 
 export type RouteClass = "public" | "shared" | "private" | "identity" | "unknown";
 
@@ -70,7 +72,13 @@ export function routeClass(path: string, policy: AnalysisPolicy = DEFAULT_POLICY
 }
 
 export function isSuccessStatus(status: number, policy: AnalysisPolicy = DEFAULT_POLICY): boolean {
+  if (!policy.successStatuses.length) return status >= 200 && status < 300;
   return policy.successStatuses.includes(status);
+}
+
+export function isDenyStatus(status: number, policy: AnalysisPolicy = DEFAULT_POLICY): boolean {
+  if (!policy.denyStatuses.length) return status === 401 || status === 403;
+  return policy.denyStatuses.includes(status);
 }
 
 /** JWT identity is trusted only after signature verify and optional iss/aud policy. */
@@ -88,6 +96,170 @@ export function isTrustedJwtIdentity(token: JwtToken, policy: AnalysisPolicy = D
   return true;
 }
 
+export function clonePolicy(policy: AnalysisPolicy): AnalysisPolicy {
+  return {
+    version: policy.version,
+    publicPathPatterns: [...policy.publicPathPatterns],
+    sharedPathPatterns: [...policy.sharedPathPatterns],
+    privatePathPatterns: [...policy.privatePathPatterns],
+    identityPathPatterns: [...policy.identityPathPatterns],
+    inventoryFields: [...policy.inventoryFields],
+    trustedOwnershipFields: [...policy.trustedOwnershipFields],
+    successStatuses: [...policy.successStatuses],
+    denyStatuses: [...policy.denyStatuses],
+    requireJwtIss: [...policy.requireJwtIss],
+    requireJwtAud: [...policy.requireJwtAud],
+    roleHierarchy: Object.fromEntries(Object.entries(policy.roleHierarchy).map(([k, v]) => [k, [...v]])),
+    logoutPathPatterns: [...policy.logoutPathPatterns],
+  };
+}
+
+function canonBody(policy: AnalysisPolicy): string {
+  return JSON.stringify({
+    publicPathPatterns: policy.publicPathPatterns,
+    sharedPathPatterns: policy.sharedPathPatterns,
+    privatePathPatterns: policy.privatePathPatterns,
+    identityPathPatterns: policy.identityPathPatterns,
+    inventoryFields: policy.inventoryFields,
+    trustedOwnershipFields: policy.trustedOwnershipFields,
+    successStatuses: policy.successStatuses,
+    denyStatuses: policy.denyStatuses,
+    requireJwtIss: policy.requireJwtIss,
+    requireJwtAud: policy.requireJwtAud,
+    roleHierarchy: policy.roleHierarchy,
+    logoutPathPatterns: policy.logoutPathPatterns,
+  });
+}
+
+export function policyContentFingerprint(policy: AnalysisPolicy): string {
+  return fnv1a64Hex(canonBody(policy));
+}
+
 export function policyFingerprint(policy: AnalysisPolicy): string {
-  return policy.version;
+  return fnv1a64Hex(`${policy.version}|${canonBody(policy)}`);
+}
+
+export function bumpPolicyVersion(current: string): string {
+  const t = current.trim() || "policy-1";
+  const m = /^(.*?)(\d+)$/.exec(t);
+  if (m) return `${m[1]}${Number(m[2]) + 1}`;
+  return `${t}-2`;
+}
+
+export function parseLineList(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function parseStatusList(text: string): number[] {
+  return parseLineList(text)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n >= 100 && n <= 599);
+}
+
+export function parseRoleHierarchy(text: string): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const idx = t.indexOf(":");
+    if (idx < 0) continue;
+    const role = t.slice(0, idx).trim();
+    if (!role) continue;
+    out[role] = t
+      .slice(idx + 1)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return out;
+}
+
+export function formatRoleHierarchy(h: Record<string, string[]>): string {
+  return Object.entries(h)
+    .map(([k, v]) => `${k}: ${v.join(", ")}`)
+    .join("\n");
+}
+
+export function sanitizePolicy(draft: AnalysisPolicy): AnalysisPolicy {
+  const next = clonePolicy(draft);
+  next.version = next.version.trim() || "policy-1";
+  next.trustedOwnershipFields = next.trustedOwnershipFields.map((s) => s.toLowerCase());
+  next.inventoryFields = next.inventoryFields.map((s) => s.trim()).filter(Boolean);
+  return next;
+}
+
+/** Apply an editor draft. Bumps version when content actually changed. */
+export function applyPolicyEdit(previous: AnalysisPolicy, draft: AnalysisPolicy): AnalysisPolicy {
+  const next = sanitizePolicy(draft);
+  if (policyContentFingerprint(previous) === policyContentFingerprint(next)) {
+    return { ...next, version: previous.version };
+  }
+  if (next.version.trim() === previous.version.trim()) {
+    next.version = bumpPolicyVersion(previous.version);
+  }
+  return next;
+}
+
+export function roleImplies(policy: AnalysisPolicy, holder: string, needed: string): boolean {
+  if (!holder || !needed) return false;
+  if (holder === needed) return true;
+  const seen = new Set<string>();
+  const walk = (role: string): boolean => {
+    if (seen.has(role)) return false;
+    seen.add(role);
+    const children = policy.roleHierarchy[role] ?? [];
+    return children.includes(needed) || children.some(walk);
+  };
+  return walk(holder);
+}
+
+export type PolicyRerunKind = "added" | "removed" | "changed";
+
+export interface PolicyRerunChange {
+  kind: PolicyRerunKind;
+  fingerprint: string;
+  title: string;
+  before?: { severity: string; confidence: string };
+  after?: { severity: string; confidence: string };
+}
+
+export function diffFindingSets(prev: Finding[], next: Finding[]): PolicyRerunChange[] {
+  const a = new Map(prev.map((f) => [f.fingerprint || f.id, f]));
+  const b = new Map(next.map((f) => [f.fingerprint || f.id, f]));
+  const out: PolicyRerunChange[] = [];
+  for (const [fp, f] of b) {
+    const old = a.get(fp);
+    if (!old) {
+      out.push({
+        kind: "added",
+        fingerprint: fp,
+        title: f.title,
+        after: { severity: f.severity, confidence: f.confidence },
+      });
+      continue;
+    }
+    if (old.severity !== f.severity || old.confidence !== f.confidence) {
+      out.push({
+        kind: "changed",
+        fingerprint: fp,
+        title: f.title,
+        before: { severity: old.severity, confidence: old.confidence },
+        after: { severity: f.severity, confidence: f.confidence },
+      });
+    }
+  }
+  for (const [fp, f] of a) {
+    if (!b.has(fp)) {
+      out.push({
+        kind: "removed",
+        fingerprint: fp,
+        title: f.title,
+        before: { severity: f.severity, confidence: f.confidence },
+      });
+    }
+  }
+  return out;
 }

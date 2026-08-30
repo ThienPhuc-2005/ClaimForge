@@ -14,7 +14,7 @@ import { MAX_BODY_CHARS, MAX_REQUESTS_PER_ACTOR } from "./limits.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
 import { bolaEvidence } from "./evidence.ts";
 import { fnv1a64Hex } from "./hash.ts";
-import { DEFAULT_POLICY, type AnalysisPolicy } from "./policy.ts";
+import { DEFAULT_POLICY, isDenyStatus, isSuccessStatus, policyFingerprint, type AnalysisPolicy } from "./policy.ts";
 import { ENGINE_VERSION, RULE_VERSION } from "./versions.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
@@ -105,6 +105,7 @@ function diffRows(
   requests: CapturedRequest[],
   ownedA: Set<string>,
   ownedB: Set<string>,
+  policy: AnalysisPolicy,
 ): DiffRow[] {
   const groups = new Map<string, CapturedRequest[]>();
   for (const r of requests) {
@@ -133,13 +134,13 @@ function diffRows(
       verdict = "b-only";
       note = "Only actor B hit this route";
     } else {
-      const aOk = a.some((x) => x.status >= 200 && x.status < 300);
-      const bOk = b.some((x) => x.status >= 200 && x.status < 300);
-      const bDenied = b.some((x) => x.status === 401 || x.status === 403);
+      const aOk = a.some((x) => isSuccessStatus(x.status, policy));
+      const bOk = b.some((x) => isSuccessStatus(x.status, policy));
+      const bDenied = b.some((x) => isDenyStatus(x.status, policy));
       const pairs = sameObjectHits(a, b);
       const classes = pairs.map(([ar, br]) => {
         const id = pathIds(ar.path)[0] ?? "";
-        return classifySameObject(id, ar.path, [ar.responseBody, br.responseBody], ownedA, ownedB);
+        return classifySameObject(id, ar.path, [ar.responseBody, br.responseBody], ownedA, ownedB, policy);
       });
       const top = strongestClass(classes);
       if (top === "confirmed") {
@@ -247,10 +248,10 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
   const ownedB = ownedObjects(ws.requests, ws.jwts, "B", ws.cookies, ownOpts);
   for (const req of ws.requests) {
     if (req.actor !== "B") continue;
-    if (req.status < 200 || req.status >= 300) continue;
+    if (!isSuccessStatus(req.status, ownOpts.policy)) continue;
     const pids = pathIds(req.path);
     const stolen = pids.filter(
-      (id) => ownedA.has(id) && !ownedB.has(id) && !looksPublicOrShared(req.path, req.responseBody),
+      (id) => ownedA.has(id) && !ownedB.has(id) && !looksPublicOrShared(req.path, [req.responseBody], ownOpts.policy),
     );
     if (stolen.length) {
       add({
@@ -434,7 +435,7 @@ export function analyze(
   const ownOpts = { policy, declaredLabels: { A: aLabel, B: bLabel } as const };
   const ownedA = ownedObjects(requests, jwts, "A", cookies, ownOpts);
   const ownedB = ownedObjects(requests, jwts, "B", cookies, ownOpts);
-  const diffs = diffRows(requests, ownedA, ownedB);
+  const diffs = diffRows(requests, ownedA, ownedB, policy);
   const idsA = actorIds(requests, jwts, "A");
   const idsB = actorIds(requests, jwts, "B");
   const idsAAll = [...new Set([...idsA, ...ownedA])];
@@ -443,7 +444,7 @@ export function analyze(
   const loot = harvestLoot(requests);
   const wordlists = buildWordlists(requests, idsAAll, idsBAll);
   const surface = buildSurface(requests);
-  const inputHash = fnv1a64Hex(`${aRaw}\n${bRaw}\n${aLabel}\n${bLabel}\n${policy.version}`);
+  const inputHash = fnv1a64Hex(`${aRaw}\n${bRaw}\n${aLabel}\n${bLabel}\n${policyFingerprint(policy)}`);
   const pre: Omit<Workspace, "findings" | "paths" | "replays" | "resultHash"> = {
     aLabel,
     bLabel,
@@ -472,7 +473,7 @@ export function analyze(
   const paths = buildPaths(withFindings);
   const replays = buildReplays(withFindings);
   const resultHash = fnv1a64Hex(
-    `${ENGINE_VERSION}|${RULE_VERSION}|${policy.version}|${inputHash}|${withFindings.findings.map((f) => f.id).join(",")}`,
+    `${ENGINE_VERSION}|${RULE_VERSION}|${policyFingerprint(policy)}|${inputHash}|${withFindings.findings.map((f) => f.id).join(",")}`,
   );
   return { ...withFindings, paths, replays, resultHash };
 }

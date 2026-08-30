@@ -42,8 +42,8 @@ function getEntry(
 
 test("looksPublicOrShared matches catalog and visibility", () => {
   assert.equal(looksPublicOrShared("/api/catalog/9"), true);
-  assert.equal(looksPublicOrShared("/api/invoices/1", JSON.stringify({ visibility: "public" })), true);
-  assert.equal(looksPublicOrShared("/api/invoices/1", JSON.stringify({ ownerId: "alice" })), false);
+  assert.equal(looksPublicOrShared("/api/invoices/1", [JSON.stringify({ visibility: "public" })]), true);
+  assert.equal(looksPublicOrShared("/api/invoices/1", [JSON.stringify({ ownerId: "alice" })]), false);
 });
 
 test("public catalog 2xx is observation, never critical BOLA", () => {

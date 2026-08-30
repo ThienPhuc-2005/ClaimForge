@@ -1,4 +1,4 @@
-# Gap matrix (evidence at HEAD `d459054` + this session)
+# Gap matrix (evidence at HEAD `6c3ba6f` + this session)
 
 | ID | Item | Status | Evidence |
 |----|------|--------|----------|
@@ -10,7 +10,7 @@
 | pre | A11y tabs / mobile | done | `desk-nav.ts`, screenshots |
 | pre | Parser fuzz | done | `parse.fuzz.test.ts` |
 | pre | Security headers | done | `security-headers.ts` |
-| P0.1 | Canonical evidence + policy trust | done (slice) | `policy.ts`, `evidence.ts`, `p0-trust-boundary.test.ts`. No policy editor UI. |
+| P0.1 | Canonical evidence + policy trust | done (slice) | `policy.ts`, editor in More → Policy, `p0-policy-editor.test.ts`. Role hierarchy is stored and parsed; not yet a scoring rule. |
 | P0.2 | Deep redaction + ReportDTO | done (slice) | `report-dto.ts`, JSON/MD/HTML/PDF; canaries. PDF is text-only. Desk JSON/MD now DTO-only. |
 | P0.3 | Replay credential boundary | done (slice) | `replay-credentials.ts`, `p0-replay-credentials.test.ts`, playbook + PlaybookView |
 | P0.4 | Session/logout model | done (slice) | `session.ts` credential-scoped revoke; `p0-session-logout.test.ts` |

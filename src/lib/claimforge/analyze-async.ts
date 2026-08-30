@@ -1,5 +1,6 @@
 import { analyze } from "./analyze.ts";
 import { WORKER_ANALYZE_BYTES } from "./limits.ts";
+import { DEFAULT_POLICY, type AnalysisPolicy } from "./policy.ts";
 import type { Workspace } from "./types.ts";
 
 let worker: Worker | null = null;
@@ -55,7 +56,13 @@ function getWorker(): Worker | null {
   }
 }
 
-function analyzeYield(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Promise<Workspace> {
+function analyzeYield(
+  aRaw: string,
+  bRaw: string,
+  aLabel: string,
+  bLabel: string,
+  policy: AnalysisPolicy,
+): Promise<Workspace> {
   const g = ++yieldGen;
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -64,7 +71,7 @@ function analyzeYield(aRaw: string, bRaw: string, aLabel: string, bLabel: string
         return;
       }
       try {
-        resolve(analyze(aRaw, bRaw, aLabel, bLabel));
+        resolve(analyze(aRaw, bRaw, aLabel, bLabel, policy));
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)));
       }
@@ -72,16 +79,22 @@ function analyzeYield(aRaw: string, bRaw: string, aLabel: string, bLabel: string
   });
 }
 
-export function analyzeAsync(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Promise<Workspace> {
+export function analyzeAsync(
+  aRaw: string,
+  bRaw: string,
+  aLabel: string,
+  bLabel: string,
+  policy: AnalysisPolicy = DEFAULT_POLICY,
+): Promise<Workspace> {
   cancelAnalyzeJobs("analyze superseded");
   const size = aRaw.length + bRaw.length;
   const w = size >= WORKER_ANALYZE_BYTES ? getWorker() : null;
-  if (!w) return analyzeYield(aRaw, bRaw, aLabel, bLabel);
+  if (!w) return analyzeYield(aRaw, bRaw, aLabel, bLabel, policy);
   const id = (seq += 1);
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
     try {
-      w.postMessage({ id, aRaw, bRaw, aLabel, bLabel });
+      w.postMessage({ id, aRaw, bRaw, aLabel, bLabel, policy });
     } catch (e) {
       pending.delete(id);
       reject(e instanceof Error ? e : new Error("analyze worker postMessage failed"));

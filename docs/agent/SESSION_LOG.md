@@ -1,5 +1,12 @@
 # Session log
 
+## 2026-08-30 — P0.1 policy editor (remainder)
+
+- More → Policy: routes, ownership fields, statuses, JWT iss/aud, logout, role hierarchy.
+- Apply re-runs the same engine and lists added/removed/changed findings. Version bumps on content change.
+- Extra ownership fields (tenantId) work. Public/shared classification uses policy, not a hardcoded regex.
+- 151 tests green. Browser: invoices-as-public demotes lab BOLA.
+
 ## 2026-08-30 — P0.8 adversarial fail-then-pass gates
 
 - Catalog `p0-gates.ts` maps every P0.1–P0.7 bug to a test that would fail if the fix is reverted.

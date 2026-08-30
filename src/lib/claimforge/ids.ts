@@ -128,6 +128,20 @@ function firstKeyed(
   return null;
 }
 
+function firstAllow(
+  rec: Record<string, unknown>,
+  allow?: string[],
+): { key: string; value: string } | null {
+  if (!allow?.length) return null;
+  for (const [k, v] of Object.entries(rec)) {
+    if (!allow.includes(k.toLowerCase())) continue;
+    if (v != null && (typeof v === "string" || typeof v === "number")) {
+      return { key: k, value: String(v) };
+    }
+  }
+  return null;
+}
+
 function walkOwners(value: unknown, into: OwnerLink[], depth: number, allow?: string[]) {
   if (depth > 8 || value == null) return;
   if (Array.isArray(value)) {
@@ -136,7 +150,7 @@ function walkOwners(value: unknown, into: OwnerLink[], depth: number, allow?: st
   }
   if (typeof value === "object") {
     const rec = value as Record<string, unknown>;
-    const owner = firstKeyed(rec, OWNER_KEYS);
+    const owner = firstKeyed(rec, OWNER_KEYS) ?? firstAllow(rec, allow);
     const id = firstKeyed(rec, OBJECT_KEYS);
     if (owner != null && id != null && owner.value !== id.value) {
       if (!allow || allow.includes(owner.key.toLowerCase())) {
