@@ -27,6 +27,7 @@ import {
   finalizeFinding,
   jwtReasonCodes,
   lootReasonCode,
+  minSeverity,
   type FindingDraft,
 } from "./review.ts";
 
@@ -369,7 +370,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       const codes: ReasonCode[] = [lootReasonCode(l.kind, l.value)];
       let confidence: Finding["confidence"] =
         l.kind === "cors" && /reflected/i.test(l.value) ? "suspicion" : "observation";
-      const severity = l.severity;
+      let severity = l.severity;
       if (l.kind === "mass-assign") {
         const actorRole = String(
           ws.jwts.find((j) => j.actor === l.actor)?.payload.role ??
@@ -392,6 +393,7 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         if (assigned.some((v) => isPrivilegeEscalation(policy, actorRole, v))) {
           codes.push("ROLE_ESCALATION");
           confidence = "confirmed";
+          severity = minSeverity(severity, "high");
         }
       }
       add({

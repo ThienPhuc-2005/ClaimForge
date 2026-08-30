@@ -16,6 +16,14 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      # `.grok/` is gitignored. ClaimForge is auth-off; materialize the flag so
+      # first-party tests and the production build agree with the sandbox.
+      - name: Materialize auth-off app-env
+        run: |
+          mkdir -p .grok
+          if [ ! -f .grok/app-env.json ]; then
+            printf '%s\n' '{"VITE_AUTH_ENABLED":"false"}' > .grok/app-env.json
+          fi
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

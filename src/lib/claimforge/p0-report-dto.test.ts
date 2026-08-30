@@ -207,7 +207,10 @@ test("PDF paginates instead of dumping one truncated page", () => {
   }));
   const pdf = renderReportPdf(dto);
   const text = new TextDecoder().decode(pdf);
-  assert.match(text, /\/Count [2-9]/);
+  const count = /\/Count (\d+)/.exec(text);
+  assert.ok(count && Number(count[1]) >= 2, `expected multiple pages, got Count ${count?.[1] ?? "?"}`);
   assert.match(text, /Why for finding/);
   assert.match(text, /Finding 39/);
+  assert.match(text, /Page 1 \/ /);
+  assert.match(text, /How:/);
 });

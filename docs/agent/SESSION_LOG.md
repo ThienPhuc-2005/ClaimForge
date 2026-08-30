@@ -1,3 +1,11 @@
+## 2026-08-30 — Remainder P0 + CI gates (repair)
+
+- Recorded true HEAD `4fdf31b` first: previous remainder snapshot claimed 387/0 and remainder SHA `2876097`; GitHub Actions run 18 on that HEAD was **379 pass / 8 fail**.
+- Remainder P0 already landed in `2876097` vs `8740c6f`: regex Apply block, role-hierarchy scoring, JWKS closed allowlist, paginated PDF. Tightened: `policyApplyDecision` refuses Apply, ROLE_ESCALATION capped at High, PDF adds How + page numbers.
+- CI `npm test` failed because `.grok/` and `AGENTS.md` are gitignored. Sandbox-doc tripwires skip when those files are absent. Workflow materializes auth-off `.grok/app-env.json` so first-party tests and production build agree.
+- Local: 387 pass. GitHub-checkout sim: 383 pass / 4 skip / 0 fail. typecheck, lint, audit:deps (0 high), build green.
+- Do not start P1 Team.
+
 ## 2026-08-30 — Remainder P0 + CI gates
 
 - Policy Apply validates regex and surfaces field errors; invalid patterns do not re-run.

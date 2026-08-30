@@ -11,6 +11,7 @@ import {
   isPrivilegeEscalation,
   isPrivilegedRole,
   parseRoleHierarchy,
+  policyApplyDecision,
   policyContentFingerprint,
   policyFingerprint,
   roleImplies,
@@ -116,6 +117,9 @@ test("invalid regex is reported and does not match as a public route", () => {
   const errors = validatePolicyPatterns(policy);
   assert.equal(errors.length, 1);
   assert.match(errors[0]!.pattern, /unclosed/);
+  const refused = policyApplyDecision(policy);
+  assert.equal(refused.apply, false);
+  assert.equal(refused.errors.length, 1);
   const a = har([
     get("2026-08-30T03:20:00.000Z", "https://shop.lab/api/invoices/5512", 200, "alice", {
       id: 5512,

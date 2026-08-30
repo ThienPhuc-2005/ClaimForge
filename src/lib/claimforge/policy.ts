@@ -281,6 +281,14 @@ export function validatePolicyPatterns(policy: AnalysisPolicy): PolicyPatternErr
   return out;
 }
 
+/** Apply is refused when any path pattern cannot compile. */
+export function policyApplyDecision(
+  draft: AnalysisPolicy,
+): { apply: true; errors: [] } | { apply: false; errors: PolicyPatternError[] } {
+  const errors = validatePolicyPatterns(draft);
+  return errors.length ? { apply: false, errors } : { apply: true, errors: [] };
+}
+
 export type PolicyRerunKind = "added" | "removed" | "changed";
 
 export interface PolicyRerunChange {

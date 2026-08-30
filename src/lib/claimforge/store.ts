@@ -11,7 +11,7 @@ import {
   clonePolicy,
   DEFAULT_POLICY,
   diffFindingSets,
-  validatePolicyPatterns,
+  policyApplyDecision,
   type AnalysisPolicy,
   type PolicyPatternError,
   type PolicyRerunChange,
@@ -168,9 +168,9 @@ export const useForge = create<ForgeState>()(
         return true;
       },
       applyPolicy: (draft) => {
-        const errors = validatePolicyPatterns(draft);
-        if (errors.length) {
-          set({ policyErrors: errors });
+        const decision = policyApplyDecision(draft);
+        if (!decision.apply) {
+          set({ policyErrors: decision.errors });
           return false;
         }
         const policy = applyPolicyEdit(get().policy, draft);

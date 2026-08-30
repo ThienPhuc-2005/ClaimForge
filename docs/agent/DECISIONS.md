@@ -63,4 +63,8 @@ A non-empty `jwksHostnameAllowlist` is exact-hostname match (trailing-dot normal
 
 ## ADR-015 — CI required gates are typecheck, lint, all first-party tests, audit, build
 
-`.github/workflows/ci.yml` runs `npm run typecheck`, `lint`, `npm test` (quoted `src/**/*.test.ts` + `scripts/*.test.mjs`), `npm run audit:deps` (`npm audit --audit-level=high`), and `npm run build`. Platform chrome unit tests isolate from product `site.json` / `public/og.jpg`. Auth migration glob must not include `migrations/auth/0001_auth.sql`; product SQL in `migrations/` is allowed.
+`.github/workflows/ci.yml` runs `npm run typecheck`, `lint`, `npm test` (quoted `src/**/*.test.ts` + `scripts/*.test.mjs`), `npm run audit:deps` (`npm audit --audit-level=high`), and `npm run build`. Platform chrome unit tests isolate from product `site.json` / `public/og.jpg`. Auth migration glob must not include `migrations/auth/0001_auth.sql`; product SQL in `migrations/` is allowed. Sandbox-only tripwires that read gitignored `AGENTS.md` / `.grok/skills` skip when those files are absent. CI materializes `.grok/app-env.json` (`VITE_AUTH_ENABLED=false`) because `.grok/` is gitignored and ClaimForge is auth-off.
+
+## ADR-016 — Agent docs record git HEAD, not a sibling remainder SHA
+
+`HANDOFF.md` and `TEST_STATUS.md` must name `git rev-parse HEAD` and the working tree (including untracked files). A feature parent may be listed separately. Claiming tests green requires the GitHub Actions run on that HEAD, not only a local `npm test`.

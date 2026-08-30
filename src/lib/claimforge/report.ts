@@ -134,6 +134,7 @@ function pdfReportLines(dto: ReportDTO): string[] {
     for (const e of f.evidence.filter(Boolean).slice(0, 4)) {
       lines.push(...wrapPdfLine(`- ${e}`));
     }
+    if (f.how) lines.push(...wrapPdfLine(`How: ${f.how}`));
   }
   lines.push("", "Loot");
   for (const l of dto.loot.slice(0, 24)) {
@@ -164,13 +165,15 @@ export function renderReportPdf(dto: ReportDTO): Uint8Array {
   objects.push(""); // placeholder for pages object at index 1
   objects.push(`${fontId} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj`);
 
-  for (const pageLines of pages) {
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const pageLines = pages[pageIndex]!;
+    const numbered = [...pageLines, "", `Page ${pageIndex + 1} / ${pages.length}`];
     const ops = [
       "BT",
       "/F1 10 Tf",
       "14 TL",
       "48 760 Td",
-      ...pageLines.map((l) => `(${pdfEscape(l.slice(0, 120))}) Tj T*`),
+      ...numbered.map((l) => `(${pdfEscape(l.slice(0, 120))}) Tj T*`),
       "ET",
     ].join("\n");
     const contentId = objects.length + 1;
