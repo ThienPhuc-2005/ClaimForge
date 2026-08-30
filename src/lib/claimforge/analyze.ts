@@ -12,6 +12,10 @@ import { extractJwtStrings, inspectJwt, jwtSubject } from "./jwt.ts";
 import { parseActorInput, resetParseIds } from "./parse.ts";
 import { MAX_BODY_CHARS, MAX_REQUESTS_PER_ACTOR } from "./limits.ts";
 import { actorIds, ownedObjects, pathIds } from "./ids.ts";
+import { bolaEvidence } from "./evidence.ts";
+import { fnv1a64Hex } from "./hash.ts";
+import { DEFAULT_POLICY, type AnalysisPolicy } from "./policy.ts";
+import { ENGINE_VERSION, RULE_VERSION } from "./versions.ts";
 import { buildIdGraph } from "./graph.ts";
 import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
 import { buildPaths, buildReplays } from "./playbook.ts";
@@ -133,7 +137,7 @@ function diffRows(
       const top = strongestClass(classes);
       if (top === "confirmed") {
         verdict = "bola";
-        note = "Heuristic BOLA: body ownership (ownerId/inventory) + B 2xx on A's object — confirm in a lab proxy";
+        note = "Confirmed BOLA: trusted server-response ownership + B 2xx on A's object";
       } else if (top === "observation") {
         verdict = "shared";
         note = "Both 2xx on a public/shared-looking resource — usually not IDOR; still check object ACL";
@@ -226,8 +230,12 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     }
   }
 
-  const ownedA = ownedObjects(ws.requests, ws.jwts, "A", ws.cookies);
-  const ownedB = ownedObjects(ws.requests, ws.jwts, "B", ws.cookies);
+  const ownOpts = {
+    policy: ws.policy ?? DEFAULT_POLICY,
+    declaredLabels: { A: ws.aLabel, B: ws.bLabel } as const,
+  };
+  const ownedA = ownedObjects(ws.requests, ws.jwts, "A", ws.cookies, ownOpts);
+  const ownedB = ownedObjects(ws.requests, ws.jwts, "B", ws.cookies, ownOpts);
   for (const req of ws.requests) {
     if (req.actor !== "B") continue;
     if (req.status < 200 || req.status >= 300) continue;
@@ -240,11 +248,24 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
         severity: "critical",
         confidence: "confirmed",
         title: `BOLA / IDOR · B read A's object ${stolen.join(",")}`,
-        why: "Body ownership (ownerId / inventory), not an unverified JWT sub, ties the object to A, and B still received 2xx. Reproduce on a lab proxy before filing.",
+        why: "Server-response ownership (ownerId / inventory) plus analyst actor map, not request body or an unverified JWT sub, ties the object to A, and B still received 2xx.",
         evidence: [`${req.method} ${req.path} → ${req.status}`, `A owns: ${stolen.join(", ")}`],
         template: req.template,
         how: "Heuristic. Authorize on object owner, not on 'is authenticated'. Compare the same request as A vs B in your interceptor.",
         fingerprint: `bola:${req.template ?? req.path}`,
+        reasonCodes: ["CROSS_ACTOR_2XX", "SERVER_OWNERSHIP_PROOF"],
+        reviewState: "new",
+        canonical: bolaEvidence({
+          policyVersion: ownOpts.policy.version,
+          actor: "B",
+          endpoint: req.template || req.path,
+          ownershipSource: "response-field",
+          ownershipTrusted: true,
+          ownershipReason: "response owner field matched analyst-declared or verified identity",
+          identityProvenance: ["analyst-actor-map"],
+          captureIds: [req.id],
+          reasonCodes: ["CROSS_ACTOR_2XX", "SERVER_OWNERSHIP_PROOF"],
+        }),
       });
     }
   }
@@ -376,7 +397,13 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
 
   return mergeFindings(out);
 }
-export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: string): Workspace {
+export function analyze(
+  aRaw: string,
+  bRaw: string,
+  aLabel: string,
+  bLabel: string,
+  policy: AnalysisPolicy = DEFAULT_POLICY,
+): Workspace {
   resetParseIds();
   const aParsed = parseActorInput(aRaw, "A");
   const bParsed = parseActorInput(bRaw, "B");
@@ -385,8 +412,9 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   const requests = [...aReq, ...bReq];
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests);
-  const ownedA = ownedObjects(requests, jwts, "A", cookies);
-  const ownedB = ownedObjects(requests, jwts, "B", cookies);
+  const ownOpts = { policy, declaredLabels: { A: aLabel, B: bLabel } as const };
+  const ownedA = ownedObjects(requests, jwts, "A", cookies, ownOpts);
+  const ownedB = ownedObjects(requests, jwts, "B", cookies, ownOpts);
   const diffs = diffRows(requests, ownedA, ownedB);
   const idsA = actorIds(requests, jwts, "A");
   const idsB = actorIds(requests, jwts, "B");
@@ -396,7 +424,8 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
   const loot = harvestLoot(requests);
   const wordlists = buildWordlists(requests, idsAAll, idsBAll);
   const surface = buildSurface(requests);
-  const pre: Omit<Workspace, "findings" | "paths" | "replays"> = {
+  const inputHash = fnv1a64Hex(`${aRaw}\n${bRaw}\n${aLabel}\n${bLabel}\n${policy.version}`);
+  const pre: Omit<Workspace, "findings" | "paths" | "replays" | "resultHash"> = {
     aLabel,
     bLabel,
     aRaw,
@@ -414,9 +443,17 @@ export function analyze(aRaw: string, bRaw: string, aLabel: string, bLabel: stri
     surface,
     parseErrorA: aParsed.error,
     parseErrorB: bParsed.error,
+    engineVersion: ENGINE_VERSION,
+    ruleVersion: RULE_VERSION,
+    policyVersion: policy.version,
+    inputHash,
+    policy,
   };
-  const withFindings = { ...pre, findings: findings({ ...pre, paths: [], replays: [] }) };
+  const withFindings = { ...pre, findings: findings({ ...pre, paths: [], replays: [], resultHash: "" }) };
   const paths = buildPaths(withFindings);
   const replays = buildReplays(withFindings);
-  return { ...withFindings, paths, replays };
+  const resultHash = fnv1a64Hex(
+    `${ENGINE_VERSION}|${RULE_VERSION}|${policy.version}|${inputHash}|${withFindings.findings.map((f) => f.id).join(",")}`,
+  );
+  return { ...withFindings, paths, replays, resultHash };
 }

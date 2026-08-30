@@ -69,7 +69,7 @@ test("BOLA confirmed on prefixed invoice id with JWT userId identity", () => {
     }),
   ]);
   const ws = analyze(a, b, "alice", "bob");
-  assert.ok(ownedObjects(ws.requests, ws.jwts, "A").has("inv_A84KL2"));
+  assert.ok(ownedObjects(ws.requests, ws.jwts, "A", undefined, { declaredLabel: "alice" }).has("inv_A84KL2"));
   assert.ok(ws.findings.some((f) => f.confidence === "confirmed" && /BOLA/i.test(f.title)));
   assert.equal(ws.diffs.find((d) => d.template.includes("/invoices"))?.verdict, "bola");
 });

@@ -6,7 +6,7 @@ Client-side red-team auth desk. Import two captures (HAR, Burp Save-items XML, r
 
 Primary tabs (arrow keys / Home / End move between these only):
 
-1. **Findings** — BOLA/IDOR, JWT, cookies, CORS, mass-assign. Observation / Suspicion / Confirmed. Confirmed BOLA needs `ownerId` / inventory, not an unverified JWT `sub`.
+1. **Findings** — BOLA/IDOR, JWT, cookies, CORS, mass-assign. Observation / Suspicion / Confirmed. Confirmed BOLA needs trusted **response** `ownerId` / inventory plus analyst actor map — never request body/query/path or an unverified JWT `sub`.
 2. **Playbook** — kill chain + curl / raw HTTP for your interceptor. This app never fires them.
 3. **Forge** — alg none, role admin, swap `sub`, HS256 sign, RS256 / JWKS verify, iss/aud.
 

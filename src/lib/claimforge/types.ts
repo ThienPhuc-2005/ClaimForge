@@ -1,3 +1,6 @@
+import type { CanonicalEvidence, ReasonCode } from "./evidence.ts";
+import type { AnalysisPolicy } from "./policy.ts";
+
 export type ActorId = "A" | "B";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
@@ -6,6 +9,16 @@ export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type JwtSigStatus = "unsigned" | "unverified" | "verified" | "invalid";
 
 export type FindingConfidence = "observation" | "suspicion" | "confirmed";
+
+export type ReviewState =
+  | "new"
+  | "needs-evidence"
+  | "confirmed"
+  | "rejected"
+  | "accepted-risk"
+  | "fixed"
+  | "retest-passed"
+  | "retest-failed";
 
 export interface HttpHeader {
   name: string;
@@ -80,6 +93,9 @@ export interface Finding {
   template?: string;
   how: string;
   fingerprint?: string;
+  reasonCodes?: ReasonCode[];
+  reviewState?: ReviewState;
+  canonical?: CanonicalEvidence;
 }
 
 export interface DiffRow {
@@ -114,6 +130,12 @@ export interface Workspace {
   replays: ReplayItem[];
   parseErrorA?: string;
   parseErrorB?: string;
+  engineVersion: string;
+  ruleVersion: string;
+  policyVersion: string;
+  inputHash: string;
+  resultHash: string;
+  policy: AnalysisPolicy;
 }
 
 export interface LootItem {

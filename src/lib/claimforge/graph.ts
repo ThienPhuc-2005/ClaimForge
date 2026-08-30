@@ -69,7 +69,7 @@ export function buildIdGraph(
     const sub = subjectOf[req.actor];
     const ok = req.status >= 200 && req.status < 300;
 
-    for (const rel of [...ownerLinks(req.responseBody), ...ownerLinks(req.requestBody)]) {
+    for (const rel of ownerLinks(req.responseBody)) {
       upsert("subject", rel.owner, { seenBy: [req.actor] });
       upsert("object", rel.object, { owners: sub === rel.owner ? [req.actor] : [], seenBy: [req.actor] });
       const obj = nodes.get(nodeKey("object", rel.object))!;

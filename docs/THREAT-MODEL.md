@@ -23,7 +23,7 @@ Heuristics teach a workflow, not a verdict. `alg=none` in a capture does not pro
 
 ## BOLA / IDOR
 
-Confirmed requires body ownership (`ownerId` / `userId`) or an actor inventory list. An **unverified JWT `sub` is not an object id**. A numeric `sub` that collides with `/resource/{id}` is not Confirmed. Public/shared catalog bodies stay Observation.
+Confirmed requires **trusted server-response** ownership (`ownerId` / `userId` on the response, or an inventory list on an identity/private route) plus B 2xx on A's object. Request body, query, and path are never ownership proof. An **unverified JWT `sub` is not a trusted identity and is not an object id**. Analyst-declared actor labels may map to `ownerId`. Public/shared catalog bodies stay Observation.
 
 ## CORS
 

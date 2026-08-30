@@ -1,5 +1,6 @@
 import type { ActorId, CapturedRequest, CookieRecord, JwtToken } from "./types.ts";
 import { jwtSubject } from "./jwt.ts";
+import { DEFAULT_POLICY, isTrustedJwtIdentity, routeClass, type AnalysisPolicy } from "./policy.ts";
 
 const ID_KEYS = /^(id|user_?id|account_?id|owner_?id|customer_?id|org_?id|uid|sub)$/i;
 const ARRAY_ID = /(^ids?$|invoices|orders|users|accounts|objects)/i;
@@ -97,43 +98,52 @@ export function bodyIds(text?: string): Set<string> {
 export interface OwnerLink {
   owner: string;
   object: string;
+  field: string;
 }
 
 const OWNER_KEYS = /^(ownerid|owner_id|userid|user_id|accountid|account_id|customerid|customer_id|owner)$/i;
 const OBJECT_KEYS = /^(id|invoiceid|invoice_id|orderid|order_id|objectid|object_id)$/i;
 
-export function ownerLinks(text?: string): OwnerLink[] {
+export function ownerLinks(text?: string, allowedOwnerFields?: string[]): OwnerLink[] {
   if (!text) return [];
   try {
     const out: OwnerLink[] = [];
-    walkOwners(JSON.parse(text), out, 0);
+    const allow = allowedOwnerFields?.map((f) => f.toLowerCase());
+    walkOwners(JSON.parse(text), out, 0, allow);
     return out;
   } catch {
     return [];
   }
 }
 
-function firstKeyed(rec: Record<string, unknown>, re: RegExp): string | null {
+function firstKeyed(
+  rec: Record<string, unknown>,
+  re: RegExp,
+): { key: string; value: string } | null {
   for (const [k, v] of Object.entries(rec)) {
-    if (re.test(k) && v != null && (typeof v === "string" || typeof v === "number")) return String(v);
+    if (re.test(k) && v != null && (typeof v === "string" || typeof v === "number")) {
+      return { key: k, value: String(v) };
+    }
   }
   return null;
 }
 
-function walkOwners(value: unknown, into: OwnerLink[], depth: number) {
+function walkOwners(value: unknown, into: OwnerLink[], depth: number, allow?: string[]) {
   if (depth > 8 || value == null) return;
   if (Array.isArray(value)) {
-    for (const v of value) walkOwners(v, into, depth + 1);
+    for (const v of value) walkOwners(v, into, depth + 1, allow);
     return;
   }
   if (typeof value === "object") {
     const rec = value as Record<string, unknown>;
     const owner = firstKeyed(rec, OWNER_KEYS);
     const id = firstKeyed(rec, OBJECT_KEYS);
-    if (owner != null && id != null && owner !== id) {
-      into.push({ owner, object: id });
+    if (owner != null && id != null && owner.value !== id.value) {
+      if (!allow || allow.includes(owner.key.toLowerCase())) {
+        into.push({ owner: owner.value, object: id.value, field: owner.key });
+      }
     }
-    for (const v of Object.values(rec)) walkOwners(v, into, depth + 1);
+    for (const v of Object.values(rec)) walkOwners(v, into, depth + 1, allow);
   }
 }
 
@@ -143,6 +153,7 @@ function pushIdentity(into: Set<string>, v: unknown) {
   if (s && s.length < 128 && !/^https?:/i.test(s)) into.add(s);
 }
 
+/** Seen identities from JWT/cookies — not a trust decision. */
 export function actorIdentities(jwts: JwtToken[], actor: ActorId, cookies?: CookieRecord[]): Set<string> {
   const ids = new Set<string>();
   for (const j of jwts.filter((x) => x.actor === actor)) {
@@ -165,45 +176,97 @@ export function actorIdentities(jwts: JwtToken[], actor: ActorId, cookies?: Cook
   return ids;
 }
 
-function allIdentities(jwts: JwtToken[]): Set<string> {
+export interface OwnershipOpts {
+  policy?: AnalysisPolicy;
+  declaredLabel?: string;
+  declaredLabels?: Partial<Record<ActorId, string>>;
+}
+
+/**
+ * Identities allowed to prove ownership.
+ * Unverified JWT `sub` / client cookies never qualify.
+ * Analyst-declared actor labels always qualify.
+ */
+export function trustedIdentities(
+  jwts: JwtToken[],
+  actor: ActorId,
+  opts?: OwnershipOpts,
+): Set<string> {
+  const policy = opts?.policy ?? DEFAULT_POLICY;
+  const ids = new Set<string>();
+  const label = (opts?.declaredLabel ?? opts?.declaredLabels?.[actor] ?? "").trim();
+  if (label) ids.add(label);
+  for (const j of jwts.filter((x) => x.actor === actor)) {
+    if (!isTrustedJwtIdentity(j, policy)) continue;
+    const sub = jwtSubject(j);
+    if (sub) ids.add(sub);
+    const p = j.payload;
+    pushIdentity(ids, p.uid);
+    pushIdentity(ids, p.userId);
+    pushIdentity(ids, p.user_id);
+    pushIdentity(ids, p.account_id);
+    pushIdentity(ids, p.accountId);
+    pushIdentity(ids, p.email);
+    pushIdentity(ids, p.preferred_username);
+  }
+  return ids;
+}
+
+function allTrusted(jwts: JwtToken[], opts?: OwnershipOpts): Set<string> {
   const s = new Set<string>();
   for (const actor of ["A", "B"] as const) {
-    for (const id of actorIdentities(jwts, actor)) s.add(id);
+    for (const id of trustedIdentities(jwts, actor, opts)) s.add(id);
   }
   return s;
 }
 
 /**
- * Object ids this actor owns. JWT `sub` is an identity, never an object id —
- * unverified tokens must not mark /resource/{sub} as owned, and a numeric sub
- * colliding with an invoice id is not ownership proof.
- * Proof is ownerId/userId in a body (owner ≠ object), or this actor's inventory
- * list when those ids are not themselves JWT subjects.
+ * Object ids this actor owns under the policy trust boundary.
+ *
+ * Never: request body, query, path, unverified JWT sub.
+ * Trusted: analyst-declared label; verified JWT; response owner fields / inventory
+ * on identity or private routes.
  */
 export function ownedObjects(
   requests: CapturedRequest[],
   jwts: JwtToken[],
   actor: ActorId,
   cookies?: CookieRecord[],
+  opts?: OwnershipOpts,
 ): Set<string> {
+  void cookies;
+  const policy = opts?.policy ?? DEFAULT_POLICY;
   const owned = new Set<string>();
-  const mine = actorIdentities(jwts, actor, cookies);
-  const all = cookies
-    ? new Set([...allIdentities(jwts), ...actorIdentities(jwts, "A", cookies), ...actorIdentities(jwts, "B", cookies)])
-    : allIdentities(jwts);
+  const mine = trustedIdentities(jwts, actor, { ...opts, policy });
+  const all = allTrusted(jwts, { ...opts, policy });
+  const jwtSubjects = new Set<string>();
+  for (const side of ["A", "B"] as const) {
+    for (const id of actorIdentities(jwts, side, cookies)) jwtSubjects.add(id);
+  }
+  const fields = policy.trustedOwnershipFields;
+
   for (const req of requests) {
-    for (const rel of [...ownerLinks(req.responseBody), ...ownerLinks(req.requestBody)]) {
+    const klass = routeClass(req.path, policy);
+    if (klass === "public" || klass === "shared") continue;
+    for (const rel of ownerLinks(req.responseBody, fields)) {
+      if (jwtSubjects.has(rel.object)) continue;
       if (mine.has(rel.owner) && !all.has(rel.object)) owned.add(rel.object);
     }
   }
+
   for (const req of requests.filter((r) => r.actor === actor)) {
+    const klass = routeClass(req.path, policy);
+    if (klass !== "identity" && klass !== "private" && klass !== "unknown") continue;
     try {
       const body = req.responseBody ? (JSON.parse(req.responseBody) as Record<string, unknown>) : null;
-      const inv = body?.invoices ?? body?.orders;
-      if (Array.isArray(inv)) {
+      if (!body) continue;
+      for (const field of policy.inventoryFields) {
+        const inv = body[field];
+        if (!Array.isArray(inv)) continue;
         for (const v of inv) {
           const id = typeof v === "object" && v && "id" in v ? String((v as { id: unknown }).id) : String(v);
-          if (!all.has(id) && isIdentifier(id, "id")) owned.add(id);
+          if (jwtSubjects.has(id) || all.has(id)) continue;
+          if (isIdentifier(id, "id")) owned.add(id);
         }
       }
     } catch {
