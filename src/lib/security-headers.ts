@@ -11,7 +11,7 @@ export const CSP_VALUE = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https: blob:",
+  "connect-src 'self' https: blob: http://127.0.0.1:* http://localhost:* http://[::1]:*",
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
   "frame-src 'self'",

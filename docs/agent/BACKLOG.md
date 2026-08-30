@@ -15,7 +15,7 @@
 | P0.3 | Replay credential boundary | done (slice) | `replay-credentials.ts`, `p0-replay-credentials.test.ts`, playbook + PlaybookView |
 | P0.4 | Session/logout model | done (slice) | `session.ts` credential-scoped revoke; `p0-session-logout.test.ts` |
 | P0.5 | Forge revision machine | done (slice) | `forge-revision.ts`, `p0-forge-revision.test.ts`, ForgeView |
-| P0.6 | JWKS network / SSRF | missing | user-initiated fetch only |
+| P0.6 | JWKS network / SSRF | done (slice) | `jwks-fetch.ts`, `p0-jwks-fetch.test.ts`; team allowlist API, no UI |
 | P0.7 | Review workflow states | partial | confidence classes exist; reviewState on BOLA findings |
 | P0.8 | Adversarial gate per P0 bug | partial | P0.1–P0.3 tests exist |
 | P1.* | Team / tenant / OIDC | not_started | spec forbids until P0 green |

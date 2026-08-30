@@ -7,6 +7,7 @@ test("production CSP allows grok.com, workers, JWKS connect, and denies framing"
   assert.match(CSP_VALUE, /worker-src[^;]*blob:/);
   assert.match(CSP_VALUE, /worker-src[^;]*'self'/);
   assert.match(CSP_VALUE, /connect-src[^;]*https:/);
+  assert.match(CSP_VALUE, /connect-src[^;]*127\.0\.0\.1/);
   assert.match(CSP_VALUE, /frame-ancestors 'none'/);
   assert.doesNotMatch(CSP_VALUE, /'unsafe-eval'/);
   assert.doesNotMatch(CSP_VALUE, /frame-ancestors \*/);

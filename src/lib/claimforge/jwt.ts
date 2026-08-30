@@ -5,10 +5,11 @@ import {
   decodeProtectedHeader,
   importSPKI,
   importX509,
-  createRemoteJWKSet,
+  createLocalJWKSet,
   type JWTVerifyGetKey,
 } from "jose";
 import type { JwtToken, ActorId, JwtSigStatus } from "./types.ts";
+import { fetchJwksDocument, type JwksUrlPolicy } from "./jwks-fetch.ts";
 
 function b64urlToUtf8(input: string): string {
   const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
@@ -107,6 +108,9 @@ export interface JwtVerifyOptions {
   secret?: string;
   publicKeyPem?: string;
   jwksUrl?: string;
+  jwksConfirmed?: boolean;
+  jwksFetch?: typeof fetch;
+  jwksPolicy?: JwksUrlPolicy;
   issuer?: string;
   audience?: string | string[];
 }
@@ -142,11 +146,12 @@ export async function verifyJwtWithKey(token: JwtToken, opts: JwtVerifyOptions):
     let key: CryptoKey | Uint8Array | JWTVerifyGetKey;
     let algorithms: string[];
     if (opts.jwksUrl) {
-      const url = new URL(opts.jwksUrl);
-      if (url.protocol !== "https:" && url.protocol !== "http:") {
-        throw new Error("JWKS URL must be http(s)");
-      }
-      key = createRemoteJWKSet(url);
+      const { jwks } = await fetchJwksDocument(opts.jwksUrl, {
+        confirmed: Boolean(opts.jwksConfirmed),
+        fetchImpl: opts.jwksFetch,
+        policy: opts.jwksPolicy,
+      });
+      key = createLocalJWKSet(jwks as Parameters<typeof createLocalJWKSet>[0]);
       algorithms = [...ASYM_ALGS];
     } else if (opts.publicKeyPem) {
       const alg = token.alg && ASYM_ALGS.includes(token.alg as (typeof ASYM_ALGS)[number]) ? token.alg : "RS256";

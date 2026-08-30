@@ -22,12 +22,16 @@ No PDF library in the tree. P0.2 ships a PDF 1.4 Helvetica text dump for canarie
 
 ## ADR-006 — Replay wipes source credentials then attaches one actor set
 
-BOLA replay used to keep leftover Cookie when swapping Bearer. P0.3 strips every credential-class header, then attaches only the selected actor set. Mixing two actors is not allowed.
+P0.3 strips credential-class headers then attaches only the selected actor set.
 
 ## ADR-007 — Logout revokes only credentials on that request
 
-Each bearer, session cookie, and API-key is its own session. Sibling devices stay live. Public logout-named routes and unauthenticated logout are not Confirmed.
+Each bearer, session cookie, and API-key is its own session. Sibling devices stay live.
 
 ## ADR-008 — Forge signed output is revision-bound
 
-A signed compact JWT is valid to copy only while `signedAtRevision === revision`. Any change to header, payload, alg, HMAC secret, public PEM, JWKS URL, kid, issuer, or audience bumps revision and labels the previous signature Stale. The unsigned draft stays copyable.
+A signed compact JWT is valid to copy only while `signedAtRevision === revision`.
+
+## ADR-009 — JWKS fetch is confirmed, allowlisted, and never uses createRemoteJWKSet
+
+P0.6 fetches the JWKS document with `credentials:omit`, `redirect:manual`, HTTPS (HTTP loopback only), size/timeout/content-type gates, and `jwksConfirmed`. Audit stores hostname/status/bytes, never tokens or JWK material. Team mode blocks private/link-local/metadata and requires a hostname allowlist.

@@ -1,5 +1,5 @@
-- **P0.6 gap (medium):** JWKS fetch is user-initiated but lacks HTTPS/localhost policy, confirm dialog, timeout, size limit, and SSRF checks.
-- **P0.1 gap (medium):** No policy editor UI; `DEFAULT_POLICY` only.
+- **P0.7 gap (medium):** Review workflow states are not applied uniformly to every finding family.
+- **P0.1 gap (medium):** No policy editor UI.
+- **P0.6 remaining (low):** DNS rebinding not fully solvable in-browser; team allowlist has no UI.
 - **P0.2 remaining (low):** PDF is a single-page text dump.
-- **P0.3 remaining (low):** Extra credential header names have no policy editor.
 - **CI (low):** `.github/workflows/ci.yml` is typecheck+lint+test:claimforge only.

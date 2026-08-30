@@ -13,6 +13,7 @@ import {
   snapshotFromDraft,
   type ForgeMachine,
 } from "@/lib/claimforge/forge-revision.ts";
+import { inspectJwksUrl } from "@/lib/claimforge/jwks-fetch.ts";
 import { cn } from "@/lib/utils";
 
 export function ForgeView() {
@@ -30,6 +31,8 @@ export function ForgeView() {
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [machine, setMachine] = useState<ForgeMachine>(() => createForgeMachine());
+  const [jwksConfirmed, setJwksConfirmed] = useState(false);
+  const [jwksPrompt, setJwksPrompt] = useState(false);
 
   function syncMachine(next: {
     header?: string;
@@ -146,6 +149,16 @@ export function ForgeView() {
       setVerifyMsg("Need an HMAC secret, RS256 public key (PEM), or JWKS URL.");
       return;
     }
+    if (jwksUrl && !jwksConfirmed) {
+      const gate = inspectJwksUrl(jwksUrl);
+      if (!gate.ok) {
+        setVerifyMsg(gate.issues.join("; "));
+        return;
+      }
+      setJwksPrompt(true);
+      setVerifyMsg("Confirm JWKS fetch first — no request has been sent.");
+      return;
+    }
     setBusy(true);
     try {
       const ins = inspectJwt(seed.raw, seed.actor, seed.source);
@@ -157,6 +170,7 @@ export function ForgeView() {
         secret: secret || undefined,
         publicKeyPem: publicPem || undefined,
         jwksUrl: jwksUrl || undefined,
+        jwksConfirmed: jwksUrl ? jwksConfirmed : undefined,
         issuer: issuer || undefined,
         audience: audience || undefined,
       });
@@ -282,12 +296,50 @@ export function ForgeView() {
           value={jwksUrl}
           onChange={(e) => {
             setJwksUrl(e.target.value);
+            setJwksConfirmed(false);
+            setJwksPrompt(false);
             syncMachine({ jwksUrl: e.target.value });
           }}
           placeholder="https://lab/.well-known/jwks.json"
           className="mt-1 h-11 w-full rounded-md border border-border bg-bg px-3 font-mono text-sm text-fg outline-none ring-accent focus:ring-2"
         />
       </label>
+      {jwksPrompt &&
+        (() => {
+          const gate = inspectJwksUrl(jwksUrl);
+          return (
+            <div className="rounded-md border border-warn/40 bg-elevated p-3 text-xs" role="alertdialog" aria-label="Confirm JWKS fetch">
+              <p className="font-medium text-fg">Confirm outbound JWKS request</p>
+              <ul className="mt-2 space-y-1 text-muted">
+                <li>Host: {gate.notice.hostname || "—"}</li>
+                <li>Protocol: {gate.notice.protocol || "—"}</li>
+                <li>Sends: {gate.notice.sends}</li>
+                <li>Receives: {gate.notice.receives}</li>
+              </ul>
+              {!gate.ok && <p className="mt-2 text-danger">{gate.issues.join("; ")}</p>}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Preset
+                  onClick={() => {
+                    if (!gate.ok) return;
+                    setJwksConfirmed(true);
+                    setJwksPrompt(false);
+                    setVerifyMsg("JWKS confirmed. Click Verify seed to fetch.");
+                  }}
+                >
+                  Confirm fetch
+                </Preset>
+                <Preset
+                  onClick={() => {
+                    setJwksPrompt(false);
+                    setJwksConfirmed(false);
+                  }}
+                >
+                  Cancel
+                </Preset>
+              </div>
+            </div>
+          );
+        })()}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs text-muted">
           Expected issuer (iss)
