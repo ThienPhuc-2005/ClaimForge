@@ -1,5 +1,6 @@
-- **P1.1 remaining:** Kernel only. No Team HTTP, OIDC, sessions, RBAC, UI, or audit table. PGLite proves application isolation + composite FK; Neon/Postgres RLS is not claimed. Team persist is a projection (loot/replay blobs always `[redacted]`), not encryption. Server RBAC cannot control in-browser loot/replay export.
-- **P0.6 remaining (low):** DNS rebinding is not fully solvable in-browser; fetch cannot pin resolved IPs across redirects.
+- **P1.2 remaining:** Customer OIDC + opaque sessions implemented, not merged. No P1.3 RBAC, no tenant list, no IdP (RP-initiated) logout, no OIDC discovery, no JIT provisioning. `__Host-` cookie requires HTTPS. Session GET/logout fail-closed if OIDC env is missing. PGLite proves schema + repo; Neon/Postgres RLS is not claimed.
+- **P1.1 remaining:** Kernel still has no collab HTTP, UI, or audit table. Team persist is a projection (loot/replay blobs always `[redacted]`), not encryption. Server RBAC cannot control in-browser loot/replay export.
+- **P0.6 remaining (low):** DNS rebinding is not fully solvable in-browser; fetch cannot pin resolved IPs across redirects. Team OIDC reuses the same gate.
 - **P0.2 remaining (low):** PDF is paginated Helvetica 1.4, not a designed layout. Good enough for canaries and offline share; visual polish is P3.
 - **Prod preview CSP (low):** `connect-src` includes `http://[::1]:*`, which Chromium ignores as an invalid source. Content matches dev; not a remainder regression.
 - **CI vs merge:** `main` has no branch protection / ruleset. Green Actions is evidence, not a merge gate.

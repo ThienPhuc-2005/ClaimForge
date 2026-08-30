@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1 isolation kernel is implemented on `feat/p1-isolation-kernel` (migration + pure repository + adversarial tests). P1.2+ (OIDC, RBAC HTTP, UI, sessions, audit tables) are out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is implemented on `feat/p1.2-oidc-sessions` (additive `0004`, env IdP, Authorization Code + PKCE, hashed sessions). P1.3+ (RBAC HTTP, audit, collab HTTP, UI) stay out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 
@@ -54,7 +54,7 @@ Legal factories (P1.1) — both stamp the brand and register the WeakMap snapsho
 
 Every public repository function calls `requireActiveMember`: read the frozen WeakMap snapshot (never `ctx.tenantId` / `ctx.userKey` / `ctx.role` as SQL authority), then `SELECT` `team_member` for that pair. Missing membership is fail-closed `not found`. Live `role` comes from the row. SQL uses the snapshot/row ids only.
 
-P1.2 will bind `user_key` from a verified OIDC `iss`+`sub` after signature/iss/aud checks, then call the same resolver. Unverified tokens never become context.
+P1.2 binds `user_key` from a verified OIDC `iss`+`sub` (`oidc:` + sha256 of `JSON.stringify([iss, sub])`) after signature/iss/aud/azp/exp/iat/nonce checks, then calls the same resolver. Unverified tokens never become context. JWT `tenant_id` / `role` claims are ignored.
 
 ---
 
@@ -91,7 +91,7 @@ Composite primary keys and composite FKs make a workspace or collab row physical
 
 The same `user_key` **may** belong to multiple tenants (separate member rows). Isolation is `(tenant_id, user_key)`, not `user_key` alone.
 
-**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies.
+**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies. P1.2 adds `team_oidc_pending` and `team_session` in `migrations/0004_team_oidc_sessions.sql` without rewriting `0003`.
 
 ---
 
@@ -143,20 +143,30 @@ UTF-8 byte caps: policy 64KiB, review 64KiB, ReportDTO 512KiB; string/fingerprin
 11. Mutating a minted context or copying its brand symbol cannot retarget tenant SQL.
 12. A context whose membership row was deleted cannot be reused.
 13. Team persist is a projection: loot values and replay raw/curl are always `[redacted]` in stored JSON.
+14. Unverified OIDC tokens never become `TenantContext`; JWT `tenant_id`/`role` claims are ignored.
+15. Unknown OIDC subject is 404; no JIT `team_member`.
+16. Session DB stores token hash only; deleted members cannot reuse a session.
+17. Team OIDC is HTTPS-only with `__Host-` cookie; HTTP login is 400.
 
 ---
 
-## 7. Deferred (specified now, not built)
+## 7. P1.2 OIDC and opaque sessions
 
-### OIDC (P1.2)
+Instance-wide confidential OIDC client. Endpoints and secrets are env-only (`CLAIMFORGE_TEAM_OIDC_*`, `CLAIMFORGE_TEAM_SEAL_KEY`). Missing issuer, endpoints, closed hostname allowlist, client secret, or seal key fail-closed (HTTP 503). Secrets live in a WeakMap on the frozen config object and must not appear in logs or `JSON.stringify`.
 
-Authorization Code + PKCE. JWKS fetch reuses `inspectJwksUrl` / `fetchJwksDocument` with `teamMode: true` and a closed hostname allowlist. No `createRemoteJWKSet`.
+**Authorization Code + PKCE S256.** Static authorization/token/JWKS URLs (no discovery). State and nonce are CSPRNG. `team_oidc_pending` stores `state_hash`, nonce, code_challenge, AES-256-GCM `verifier_ciphertext`, redirect_uri, and `tenant_slug`. Consume is single-use (`consumed_at`) with a 10-minute TTL.
 
-**Client secrets:** P1.1 stores none. When P1.2 persists IdP config, `client_secret` must live in a secret manager **or** envelope-encrypt with a server-managed key (env/KMS). Plaintext secrets in Postgres are forbidden.
+**JWKS / token fetch.** Reuse `inspectJwksUrl` / `fetchJwksDocument` with `teamMode: true` and a closed allowlist. Token POST: `credentials:omit`, `redirect:manual` (3xx denied), timeout/size/content-type limits. No `createRemoteJWKSet`. Local verify via `createLocalJWKSet`; cache TTL 5 minutes; unknown `kid` refetches at most once. ID token algs: RS256 / PS256 / ES256 only; reject `none` and HS*.
 
-### Sessions (P1.2)
+**Login bind.** `GET /api/team/oidc/login?slug=` requires HTTPS and a live tenant slug. Callback verifies the ID token, maps `iss`+`sub` to `user_key`, then `resolveTenantContextBySlug` — **no JIT** `team_member` insert. Unknown subject or membership in a different tenant is 404.
 
-Opaque random token (cryptographic RNG). Database stores only a **hash** of the token, plus expiry, rotation, and revoke. Presenting the raw token in a cookie (`__Host-claimforge-team.session`) is allowed; storing the raw token is not.
+**Opaque session.** `randomBytes(32)` base64url; DB stores SHA-256 only. `tenant_id NOT NULL` and `FOREIGN KEY (tenant_id, user_key) → team_member ON DELETE CASCADE`. TTL 12 hours from `created_at`; atomic `UPDATE token_hash` after 6 hours; revoke sets `revoked_at`. Cookie `__Host-claimforge-team.session`: Secure, HttpOnly, Path=/, SameSite=Strict, no Domain. HTTPS-only. `GET /api/team/session` returns `{userKey, tenantId}` — no tenant list, no role. Logout is local revoke only (`POST /api/team/oidc/logout`, same-origin).
+
+**Client secrets:** stay in env. They are not written to Postgres.
+
+---
+
+## 8. Deferred (specified now, not built)
 
 ### Audit (P1.4)
 
@@ -176,12 +186,24 @@ GitHub Actions `ci` / `gates` currently runs on `push` to `main` and on `pull_re
 
 ---
 
-## 8. P1.1 deliverable (this slice)
+## 9. P1.1 deliverable
 
 - This document + ADRs in `docs/agent/DECISIONS.md`
 - Migration `0003_team_isolation.sql`
-- Pure repository layer `src/lib/team/*` (no HTTP, no UI)
+- Pure repository layer `src/lib/team/*` (kernel: no HTTP, no UI)
 - Adversarial tests + `p1-gates.ts`
 - Solo/Lab regression tests
 
-Out of scope: OIDC routes, session cookies, RBAC middleware, Team UI, audit table, capture upload.
+P1.1 out of scope (now P1.2 or later): OIDC routes, session cookies, RBAC middleware, Team UI, audit table, capture upload.
+
+## 10. P1.2 deliverable
+
+- ADR-034 + threat-model P1.2 section
+- Migration `0004_team_oidc_sessions.sql` (additive; does not rewrite 0003)
+- TeamSql transactions on one Neon connection (`wrapPgPool` / SAVEPOINT)
+- Env OIDC loader, PKCE S256, sealed `code_verifier`, outbound SSRF gate, local JWKS verify
+- Routes: `GET /api/team/oidc/login?slug=`, `GET /api/team/oidc/callback`, `POST /api/team/oidc/logout`, `GET /api/team/session`
+- Opaque tenant-bound sessions + `__Host-claimforge-team.session`
+- P1.2 gates in `p1-gates.ts` and adversarial tests
+
+Out of scope: P1.3 RBAC HTTP, P1.5 collab HTTP, P1.6 UI, tenant listing, IdP logout, OIDC discovery, JIT provisioning.

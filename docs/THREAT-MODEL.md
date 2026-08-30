@@ -65,6 +65,26 @@ In-browser loot/replay export is a local action; the Team server cannot honestly
 
 See [P1_TEAM_ISOLATION.md](./P1_TEAM_ISOLATION.md).
 
+## Team mode (P1.2 — customer OIDC + opaque sessions)
+
+Team identity is the operator's IdP, not Grok Better Auth. One confidential client per ClaimForge instance, configured by env. Authorization Code + PKCE S256. Static endpoints; no OIDC discovery.
+
+An attacker must not:
+
+- Turn an unverified JWT (`alg=none`, HS*, wrong iss/aud/nonce/exp) into a `TenantContext`.
+- Supply `tenant_id` or `role` in the ID token to switch tenant or escalate.
+- JIT-create a `team_member` by presenting a new `sub`.
+- Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use).
+- Read a raw session token or ID/access/refresh token from the database.
+- Use a session after the member row is deleted.
+- Start Team OIDC on HTTP or without a live tenant slug.
+- Point token/JWKS fetch at an unallowlisted or private host (SSRF).
+- CSRF-logout a session from another origin.
+
+The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque token in transit; only its SHA-256 is stored. Logout revokes that local session only — it does not call the IdP. DNS rebinding remains a known P0.6 residual (fetch cannot pin resolved IPs).
+
+P1.2 does not list tenants, enforce RBAC (P1.3), or persist collab over HTTP (P1.5).
+
 ## Limitations
 
 - Incomplete JSON captures used to recurse (`parseHarLike` ↔ `parseRawHttp`) until the stack overflowed. They now fail per actor with a parse error. Parser fuzz lives in CI.

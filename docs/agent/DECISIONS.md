@@ -138,3 +138,20 @@ P1.1 persist is not a key-name heuristic and is not “regex means no credential
 ## ADR-033 — TenantContext identity is WeakMap + freeze + live membership
 
 Brand symbols are defense-in-depth. Authority is `WeakMap` object identity: mint after SQL, freeze context and snapshot, re-SELECT membership on every public repo call. A deleted member cannot keep using a previously minted context. Bootstrap actors use the same registry pattern.
+
+## ADR-034 — P1.2 is instance-wide OIDC with opaque tenant-bound sessions
+
+Locked for the P1.2 epic:
+
+- One IdP per ClaimForge instance, env-configured (`CLAIMFORGE_TEAM_OIDC_*`). Confidential client; `client_secret` and `CLAIMFORGE_TEAM_SEAL_KEY` never enter Postgres, logs, or JSON serialization (WeakMap).
+- Authorization Code + PKCE S256. Static authorization/token/JWKS endpoints (no discovery). Closed hostname allowlist is mandatory. Fail-closed if issuer, endpoints, allowlist, secret, or seal key is missing.
+- JWKS: reuse P0.6 SSRF gate (`teamMode`, `credentials:omit`, `redirect:manual`). `createLocalJWKSet` only — never `createRemoteJWKSet`. Cache with TTL; unknown `kid` refetches at most once.
+- ID token: RS256/PS256/ES256; reject `none` and HS*; verify sig/iss/aud/azp/exp/iat/nonce.
+- `user_key = "oidc:" + sha256(JSON.stringify([iss, sub]))`. Login requires `?slug=` of a live tenant. No JIT `team_member`. JWT `tenant_id`/`role` are not trusted.
+- Sessions: CSPRNG 32-byte token, SHA-256 in `team_session`, `tenant_id NOT NULL`, FK to `team_member ON DELETE CASCADE`. TTL 12h from `created_at`; atomic rotate after 6h. Cookie `__Host-claimforge-team.session` Secure+HttpOnly+Path=/+SameSite=Strict, no Domain. HTTPS-only.
+- `code_verifier` is AES-256-GCM sealed with a key derived from `CLAIMFORGE_TEAM_SEAL_KEY`. State stored as hash. Pending is single-use.
+- Neon `TeamSql.transaction` checks out **one** connection for BEGIN/queries/COMMIT (SAVEPOINTs for nesting). No pooled BEGIN/COMMIT.
+- Logout is local revoke only. No tenant list in P1.2. Not Grok Better Auth.
+
+Supersedes the “future” wording in ADR-024 for the P1.2 slice; P1.1 still has no session table of its own.
+

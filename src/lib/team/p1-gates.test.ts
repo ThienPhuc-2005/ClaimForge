@@ -18,7 +18,7 @@ function testTitles(src: string): Set<string> {
   return titles;
 }
 
-test("P1.1 catalog covers unique ids and every P1.1 item", () => {
+test("P1 catalog covers unique ids and every P1 item", () => {
   const ids = P1_GATES.map((g) => g.id);
   assert.equal(ids.length, new Set(ids).size);
   for (const item of P1_ITEMS) {
@@ -26,7 +26,7 @@ test("P1.1 catalog covers unique ids and every P1.1 item", () => {
   }
 });
 
-test("P1.1 every gate points at a test title that exists", () => {
+test("P1 every gate points at a test title that exists", () => {
   const cache = new Map<string, Set<string>>();
   for (const g of P1_GATES) {
     const [file, ...rest] = g.evidenceTest.split(":");

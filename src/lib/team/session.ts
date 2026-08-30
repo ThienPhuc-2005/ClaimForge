@@ -113,7 +113,10 @@ export async function rotateTeamSession(
        RETURNING id, token_hash, tenant_id, user_key, created_at, rotated_at, expires_at`,
       [hashToken(next), now.toISOString(), loaded.session.id, hashToken(token)],
     );
-    if (!rows[0]) return loadTeamSession(tx, token, now);
+    if (!rows[0]) {
+      const again = await loadTeamSession(tx, token, now);
+      return again ? { token, ...again } : null;
+    }
     const context = await resolveTenantContext(tx, rows[0].user_key, rows[0].tenant_id);
     await requireActiveMember(tx, context);
     return { token: next, session: mapSession(rows[0]), context };

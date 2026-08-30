@@ -35,7 +35,7 @@ const LAB_SQL = readFileSync(join(root, "migrations/0002_lab_revoke.sql"), "utf8
 const TEAM_SQL = readFileSync(join(root, "migrations/0003_team_isolation.sql"), "utf8");
 const OIDC_SQL = readFileSync(join(root, "migrations/0004_team_oidc_sessions.sql"), "utf8");
 const BOOTSTRAP = "test-bootstrap-secret-1";
-const ISS = "https://idp.example";
+const ISS = "https://idp-session.example";
 const SUB = "user-1";
 
 function testEnv(over: Record<string, string | undefined> = {}): Record<string, string | undefined> {
@@ -44,10 +44,10 @@ function testEnv(over: Record<string, string | undefined> = {}): Record<string, 
     CLAIMFORGE_TEAM_OIDC_CLIENT_ID: "claimforge",
     CLAIMFORGE_TEAM_OIDC_CLIENT_SECRET: "confidential-client-secret-value",
     CLAIMFORGE_TEAM_OIDC_REDIRECT_URI: "https://app.example/api/team/oidc/callback",
-    CLAIMFORGE_TEAM_OIDC_AUTHORIZATION_ENDPOINT: "https://idp.example/authorize",
-    CLAIMFORGE_TEAM_OIDC_TOKEN_ENDPOINT: "https://idp.example/token",
-    CLAIMFORGE_TEAM_OIDC_JWKS_URI: "https://idp.example/jwks",
-    CLAIMFORGE_TEAM_OIDC_ALLOWED_HOSTS: "idp.example",
+    CLAIMFORGE_TEAM_OIDC_AUTHORIZATION_ENDPOINT: "https://idp-session.example/authorize",
+    CLAIMFORGE_TEAM_OIDC_TOKEN_ENDPOINT: "https://idp-session.example/token",
+    CLAIMFORGE_TEAM_OIDC_JWKS_URI: "https://idp-session.example/jwks",
+    CLAIMFORGE_TEAM_OIDC_ALLOWED_HOSTS: "idp-session.example",
     CLAIMFORGE_TEAM_SEAL_KEY: "claimforge-team-seal-key-32bytes!",
     ...over,
   };
@@ -197,7 +197,7 @@ test("login requires HTTPS and a live tenant slug", async () => {
   const ok = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=acme"), { sql, config });
   assert.equal(ok.status, 302);
   const loc = new URL(ok.headers.get("location") ?? "");
-  assert.equal(loc.origin + loc.pathname, "https://idp.example/authorize");
+  assert.equal(loc.origin + loc.pathname, "https://idp-session.example/authorize");
   assert.equal(loc.searchParams.get("code_challenge_method"), "S256");
   assert.doesNotMatch(loc.href, /client_secret|confidential-client/);
 });

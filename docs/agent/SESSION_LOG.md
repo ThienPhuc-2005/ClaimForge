@@ -1,3 +1,12 @@
+## 2026-08-30 — P1.2 customer OIDC + opaque sessions
+
+- Branch `feat/p1.2-oidc-sessions` from `origin/main` `f1a0771`. Did not merge. Did not touch `0003` or the P1.1 kernel.
+- A: `0004_team_oidc_sessions.sql` + TeamSql Neon one-connection transactions.
+- B: env OIDC loader (WeakMap secrets), PKCE S256, AES-GCM seal, outbound SSRF gate, local JWKS, ID token verify.
+- C: hashed pending, tenant-bound opaque sessions, `__Host-` cookie, login/callback/logout/session routes. No JIT.
+- D: P1.2 gates + adversarial tests (claims ignored, slug bind, replay, CSRF logout, no createRemoteJWKSet, 0003 untouched) and docs (ADR-034, threat model, HANDOFF/BACKLOG).
+- Next: P1.3 only if asked. Draft PR, do not merge.
+
 ## 2026-08-30 — P1.1 merged to main
 
 - Squash-merged PR #1 at HEAD `ed7f913` → `main` `fa21439` (`feat(p1): add tenant isolation kernel`).
