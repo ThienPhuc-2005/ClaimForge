@@ -1,3 +1,10 @@
+## 2026-08-30 — P1.1 persist/context hardening
+
+- Removed public `contextFromMember`. Brand is stamped only inside bootstrap (after insert) and resolve (after SELECT). Member objects are not context.
+- ReportDTO persist is a strict schema (unknown fields rejected), then deep-redacted into a new object, then UTF-8/element capped. Same sanitizer on read.
+- Collab write is `INSERT ON CONFLICT DO UPDATE`. Adversarial: api_key, sessionSecret, HTTP under innocuous names, nested unknown fields, oversize Base64, tampered row, concurrent first-write.
+- Scope still P1.1: no HTTP/OIDC/UI/RBAC.
+
 ## 2026-08-30 — P1.1 tenant isolation kernel
 
 - Branch `feat/p1-isolation-kernel`. Docs commit already on the branch; this slice is the kernel only.

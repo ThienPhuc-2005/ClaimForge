@@ -1,6 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { TeamBootstrapError, TeamIsolationError, TeamValidationError } from "./errors.ts";
-import { isTeamRole, type TeamMember, type TeamRole } from "./types.ts";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { TeamAmbiguousError, TeamBootstrapError, TeamIsolationError, TeamNotFoundError, TeamValidationError } from "./errors.ts";
+import { isTeamRole, type TeamMember, type TeamRole, type TeamSql, type TeamTenant } from "./types.ts";
 
 const TENANT_BRAND = Symbol("claimforge.team.tenant-context");
 const BOOTSTRAP_BRAND = Symbol("claimforge.team.bootstrap-actor");
@@ -44,7 +44,47 @@ export function assertBootstrapActor(actor: BootstrapActor): void {
   }
 }
 
-export function contextFromMember(member: TeamMember): TenantContext {
+type MemberRow = {
+  tenant_id: string;
+  user_key: string;
+  role: string;
+  created_at: string | Date;
+};
+
+type TenantRow = {
+  id: string;
+  slug: string;
+  name: string;
+  bootstrap_actor: string;
+  created_at: string | Date;
+};
+
+function stamp(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function mapMember(row: MemberRow): TeamMember {
+  if (!isTeamRole(row.role)) throw new TeamIsolationError("membership row is incomplete");
+  return {
+    tenantId: row.tenant_id,
+    userKey: row.user_key,
+    role: row.role,
+    createdAt: stamp(row.created_at),
+  };
+}
+
+function mapTenant(row: TenantRow): TeamTenant {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    bootstrapActor: row.bootstrap_actor,
+    createdAt: stamp(row.created_at),
+  };
+}
+
+/** Brand a context from a membership row already loaded from SQL. Not exported. */
+function tenantContextFromDbRow(member: TeamMember): TenantContext {
   if (!member.tenantId || !member.userKey || !isTeamRole(member.role)) {
     throw new TeamIsolationError("membership row is incomplete");
   }
@@ -54,6 +94,14 @@ export function contextFromMember(member: TeamMember): TenantContext {
     userKey: member.userKey,
     role: member.role,
   };
+}
+
+async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Promise<TeamMember | null> {
+  const rows = await sql.query<MemberRow>(
+    "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE tenant_id = $1 AND user_key = $2",
+    [tenantId, userKey],
+  );
+  return rows[0] ? mapMember(rows[0]) : null;
 }
 
 export function assertTenantContext(ctx: TenantContext): void {
@@ -101,4 +149,71 @@ export function requireName(value: unknown): string {
 export function requireRole(value: unknown): TeamRole {
   if (!isTeamRole(value)) throw new TeamValidationError("role is invalid");
   return value;
+}
+
+export async function bootstrapTenant(
+  sql: TeamSql,
+  actor: BootstrapActor,
+  input: { slug: string; name: string; ownerUserKey: string },
+): Promise<{ tenant: TeamTenant; owner: TeamMember; context: TenantContext }> {
+  assertBootstrapActor(actor);
+  rejectCallerTenantId(input);
+  const slug = requireSlug(input.slug);
+  const name = requireName(input.name);
+  const ownerUserKey = requireUserKey(input.ownerUserKey);
+  return sql.transaction(async (tx) => {
+    const tenantId = randomUUID();
+    await tx.query("INSERT INTO team_tenant (id, slug, name, bootstrap_actor) VALUES ($1, $2, $3, $4)", [
+      tenantId,
+      slug,
+      name,
+      actor.label,
+    ]);
+    await tx.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
+      tenantId,
+      ownerUserKey,
+      "owner",
+    ]);
+    const tenants = await tx.query<TenantRow>(
+      "SELECT id, slug, name, bootstrap_actor, created_at FROM team_tenant WHERE id = $1",
+      [tenantId],
+    );
+    const owner = await loadMember(tx, tenantId, ownerUserKey);
+    if (!tenants[0] || !owner) throw new TeamIsolationError("bootstrap did not persist");
+    return { tenant: mapTenant(tenants[0]), owner, context: tenantContextFromDbRow(owner) };
+  });
+}
+
+export async function resolveTenantContext(
+  sql: TeamSql,
+  userKeyRaw: string,
+  requestedTenantId?: string,
+): Promise<TenantContext> {
+  const userKey = requireUserKey(userKeyRaw);
+  if (requestedTenantId !== undefined) {
+    if (typeof requestedTenantId !== "string" || !requestedTenantId.trim()) {
+      throw new TeamNotFoundError("not found");
+    }
+    const member = await loadMember(sql, requestedTenantId.trim(), userKey);
+    if (!member) throw new TeamNotFoundError("not found");
+    return tenantContextFromDbRow(member);
+  }
+  const rows = await sql.query<MemberRow>(
+    "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE user_key = $1",
+    [userKey],
+  );
+  if (rows.length === 0) throw new TeamNotFoundError("not found");
+  if (rows.length > 1) throw new TeamAmbiguousError("user belongs to multiple tenants");
+  return tenantContextFromDbRow(mapMember(rows[0]!));
+}
+
+export async function resolveTenantContextBySlug(
+  sql: TeamSql,
+  userKeyRaw: string,
+  slugRaw: string,
+): Promise<TenantContext> {
+  const slug = requireSlug(slugRaw);
+  const tenants = await sql.query<{ id: string }>("SELECT id FROM team_tenant WHERE slug = $1", [slug]);
+  if (!tenants[0]) throw new TeamNotFoundError("not found");
+  return resolveTenantContext(sql, userKeyRaw, tenants[0].id);
 }

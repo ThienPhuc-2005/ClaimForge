@@ -1,4 +1,4 @@
-- **P1.1 remaining:** Kernel only. No Team HTTP, OIDC, sessions, RBAC, UI, or audit table. PGLite proves application isolation + composite FK; Neon/Postgres RLS is not claimed. Persist-guard is fail-closed heuristics, not a substitute for encryption. Server RBAC cannot control in-browser loot/replay export.
+- **P1.1 remaining:** Kernel only. No Team HTTP, OIDC, sessions, RBAC, UI, or audit table. PGLite proves application isolation + composite FK; Neon/Postgres RLS is not claimed. Persist schema/redaction is fail-closed, not encryption. Server RBAC cannot control in-browser loot/replay export.
 - **P0.6 remaining (low):** DNS rebinding is not fully solvable in-browser; fetch cannot pin resolved IPs across redirects.
 - **P0.2 remaining (low):** PDF is paginated Helvetica 1.4, not a designed layout. Good enough for canaries and offline share; visual polish is P3.
 - **Prod preview CSP (low):** `connect-src` includes `http://[::1]:*`, which Chromium ignores as an invalid source. Content matches dev; not a remainder regression.

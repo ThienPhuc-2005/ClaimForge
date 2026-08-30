@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -9,9 +9,11 @@ import { DEFAULT_POLICY } from "../claimforge/policy.ts";
 import { analyze } from "../claimforge/analyze.ts";
 import { demoActorA, demoActorB } from "../claimforge/demo.ts";
 import { toReportDTO } from "../claimforge/report-dto.ts";
+import * as contextApi from "./context.ts";
 import { unlockBootstrap, type TenantContext } from "./context.ts";
 import { TeamBootstrapError, TeamIsolationError, TeamNotFoundError, TeamPersistError } from "./errors.ts";
-
+import { TEAM_LIMITS } from "./persist-guard.ts";
+import * as repoApi from "./repo.ts";
 import {
   addMember,
   bootstrapTenant,
@@ -83,6 +85,31 @@ const DTO = {
   redaction: { dropped: [], preview: [] },
 };
 
+const FINDING = {
+  id: "F1",
+  severity: "low" as const,
+  confidence: "observation" as const,
+  reviewState: "new" as const,
+  title: "note",
+  why: "why",
+  how: "how",
+  evidence: [],
+  cwe: [],
+  owasp: [],
+  cvssDraft: { score: null, vector: null, status: "draft" as const },
+  preconditions: [],
+  reproduce: [],
+  expected: "deny",
+  actual: "allow",
+  impact: "info",
+  remediation: "fix",
+  retest: null,
+  reasonCodes: [],
+  missingEvidence: [],
+};
+
+const HTTP_DUMP = "GET /secret HTTP/1.1\r\nHost: lab.test\r\nAuthorization: Bearer abc\r\n\r\n";
+
 test("bootstrap without unlock is denied", async () => {
   const { sql } = await openKernel();
   await assert.rejects(
@@ -105,6 +132,23 @@ test("forged TenantContext without brand is rejected", async () => {
   const forged = { tenantId: a.tenant.id, userKey: "alice", role: "owner" } as TenantContext;
   await assert.rejects(() => getWorkspace(sql, forged, ws.id), TeamIsolationError);
   await assert.rejects(() => listWorkspaces(sql, forged), TeamIsolationError);
+});
+
+test("no public factory turns a member object into TenantContext", async () => {
+  assert.equal("contextFromMember" in contextApi, false);
+  assert.equal("contextFromMember" in repoApi, false);
+  const files = readdirSync(here).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+  for (const file of files) {
+    const src = readFileSync(join(here, file), "utf8");
+    assert.equal(/\bexport\s+(async\s+)?function\s+contextFromMember\b/.test(src), false, file);
+    assert.equal(/\bexport\s*\{[^}]*\bcontextFromMember\b/.test(src), false, file);
+    assert.equal(/\bexport\s+(async\s+)?function\s+tenantContextFromDbRow\b/.test(src), false, file);
+  }
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  await assert.rejects(() => getWorkspace(sql, a.owner as never, randomUUID()), TeamIsolationError);
+  const fake = { tenantId: a.tenant.id, userKey: "alice", role: "owner", createdAt: a.owner.createdAt };
+  await assert.rejects(() => listWorkspaces(sql, fake as never), TeamIsolationError);
 });
 
 test("caller-supplied tenantId on input is rejected", async () => {
@@ -249,14 +293,112 @@ test("collab write rejects raw capture secrets", async () => {
   assert.equal((ok.reportDto as { secrets: string }).secrets, "redacted");
 });
 
+test("collab persist rejects smuggled secrets and unknown fields", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const ws = await createWorkspace(sql, a.context, { name: "desk" });
+  await assert.rejects(
+    () => updateWorkspaceCollab(sql, a.context, ws.id, { reportDto: { ...DTO, api_key: "sk-live" } as never }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, sessionSecret: "sess" } as never,
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, comment: HTTP_DUMP } as never,
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, extra: "nope" }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, why: HTTP_DUMP }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, title: "A".repeat(TEAM_LIMITS.base64Run) }] },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        review: { api_key: "confirmed" },
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        policy: { ...DEFAULT_POLICY, sessionSecret: "x" } as never,
+      }),
+    TeamPersistError,
+  );
+  await assert.rejects(
+    () =>
+      updateWorkspaceCollab(sql, a.context, ws.id, {
+        reportDto: { ...DTO, findings: [{ ...FINDING, title: "x".repeat(TEAM_LIMITS.stringChars + 1) }] },
+      }),
+    TeamPersistError,
+  );
+});
+
 test("deep-redacted ReportDTO from the solo engine is persistable", async () => {
   const { sql } = await openKernel();
   const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
   const ws = await createWorkspace(sql, a.context, { name: "desk" });
   const dto = toReportDTO(analyze(demoActorA(), demoActorB(), "alice", "bob"));
   const saved = await updateWorkspaceCollab(sql, a.context, ws.id, { reportDto: dto });
+  assert.notEqual(saved.reportDto, dto);
   assert.equal((saved.reportDto as { secrets: string }).secrets, "redacted");
   assert.ok(Array.isArray((saved.reportDto as { replays: unknown[] }).replays));
+});
+
+test("tampered collab row is rejected on read", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const ws = await createWorkspace(sql, a.context, { name: "desk" });
+  await updateWorkspaceCollab(sql, a.context, ws.id, { reportDto: DTO });
+  await sql.query(
+    "UPDATE team_workspace_collab SET report_dto_json = $3 WHERE tenant_id = $1 AND workspace_id = $2",
+    [a.tenant.id, ws.id, JSON.stringify({ ...DTO, api_key: "sk-live", aRaw: HTTP_DUMP })],
+  );
+  await assert.rejects(() => getCollab(sql, a.context, ws.id), TeamPersistError);
+});
+
+test("concurrent first collab writes upsert to one row", async () => {
+  const { sql } = await openKernel();
+  const a = await bootstrapTenant(sql, operator(), { slug: "acme", name: "Acme", ownerUserKey: "alice" });
+  const ws = await createWorkspace(sql, a.context, { name: "desk" });
+  await Promise.all([
+    updateWorkspaceCollab(sql, a.context, ws.id, { policy: DEFAULT_POLICY }),
+    updateWorkspaceCollab(sql, a.context, ws.id, { review: { f1: "confirmed" } }),
+  ]);
+  const collab = await getCollab(sql, a.context, ws.id);
+  assert.ok(collab);
+  assert.equal(collab.policy?.version, DEFAULT_POLICY.version);
+  assert.equal(collab.review?.f1, "confirmed");
+  const count = await sql.query<{ n: string | number }>(
+    "SELECT COUNT(*)::text AS n FROM team_workspace_collab WHERE tenant_id = $1 AND workspace_id = $2",
+    [a.tenant.id, ws.id],
+  );
+  assert.equal(String(count[0]?.n), "1");
 });
 
 test("failed team migration leaves no half-applied tables", async () => {

@@ -1,23 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
-  assertBootstrapActor,
   assertTenantContext,
-  contextFromMember,
   rejectCallerTenantId,
   requireName,
   requireRole,
-  requireSlug,
   requireUserKey,
-  type BootstrapActor,
   type TenantContext,
 } from "./context.ts";
+import { TeamIsolationError, TeamNotFoundError, TeamValidationError } from "./errors.ts";
 import {
-  TeamAmbiguousError,
-  TeamIsolationError,
-  TeamNotFoundError,
-  TeamValidationError,
-} from "./errors.ts";
-import { assertAllowedCollab } from "./persist-guard.ts";
+  assertAllowedCollab,
+  parseStoredPolicy,
+  parseStoredReportDto,
+  parseStoredReview,
+} from "./persist-guard.ts";
 import type {
   CollabWrite,
   TeamCollab,
@@ -28,6 +24,12 @@ import type {
   TeamWorkspace,
 } from "./types.ts";
 import { isTeamRole } from "./types.ts";
+
+export {
+  bootstrapTenant,
+  resolveTenantContext,
+  resolveTenantContextBySlug,
+} from "./context.ts";
 
 type TenantRow = {
   id: string;
@@ -96,18 +98,13 @@ function mapWorkspace(row: WorkspaceRow): TeamWorkspace {
   };
 }
 
-function parseJson<T>(raw: string | null): T | null {
-  if (raw == null) return null;
-  return JSON.parse(raw) as T;
-}
-
 function mapCollab(row: CollabRow): TeamCollab {
   return {
     tenantId: row.tenant_id,
     workspaceId: row.workspace_id,
-    policy: parseJson(row.policy_json),
-    review: parseJson(row.review_json),
-    reportDto: parseJson(row.report_dto_json),
+    policy: parseStoredPolicy(row.policy_json),
+    review: parseStoredReview(row.review_json),
+    reportDto: parseStoredReportDto(row.report_dto_json),
     updatedByUserKey: row.updated_by_user_key,
     updatedAt: stamp(row.updated_at),
   };
@@ -119,70 +116,6 @@ async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Prom
     [tenantId, userKey],
   );
   return rows[0] ? mapMember(rows[0]) : null;
-}
-
-export async function bootstrapTenant(
-  sql: TeamSql,
-  actor: BootstrapActor,
-  input: { slug: string; name: string; ownerUserKey: string },
-): Promise<{ tenant: TeamTenant; owner: TeamMember; context: TenantContext }> {
-  assertBootstrapActor(actor);
-  rejectCallerTenantId(input);
-  const slug = requireSlug(input.slug);
-  const name = requireName(input.name);
-  const ownerUserKey = requireUserKey(input.ownerUserKey);
-  return sql.transaction(async (tx) => {
-    const tenantId = randomUUID();
-    await tx.query(
-      "INSERT INTO team_tenant (id, slug, name, bootstrap_actor) VALUES ($1, $2, $3, $4)",
-      [tenantId, slug, name, actor.label],
-    );
-    await tx.query(
-      "INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)",
-      [tenantId, ownerUserKey, "owner"],
-    );
-    const tenants = await tx.query<TenantRow>(
-      "SELECT id, slug, name, bootstrap_actor, created_at FROM team_tenant WHERE id = $1",
-      [tenantId],
-    );
-    const owner = await loadMember(tx, tenantId, ownerUserKey);
-    if (!tenants[0] || !owner) throw new TeamIsolationError("bootstrap did not persist");
-    return { tenant: mapTenant(tenants[0]), owner, context: contextFromMember(owner) };
-  });
-}
-
-export async function resolveTenantContext(
-  sql: TeamSql,
-  userKeyRaw: string,
-  requestedTenantId?: string,
-): Promise<TenantContext> {
-  const userKey = requireUserKey(userKeyRaw);
-  if (requestedTenantId !== undefined) {
-    if (typeof requestedTenantId !== "string" || !requestedTenantId.trim()) {
-      throw new TeamNotFoundError("not found");
-    }
-    const member = await loadMember(sql, requestedTenantId.trim(), userKey);
-    if (!member) throw new TeamNotFoundError("not found");
-    return contextFromMember(member);
-  }
-  const rows = await sql.query<MemberRow>(
-    "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE user_key = $1",
-    [userKey],
-  );
-  if (rows.length === 0) throw new TeamNotFoundError("not found");
-  if (rows.length > 1) throw new TeamAmbiguousError("user belongs to multiple tenants");
-  return contextFromMember(mapMember(rows[0]!));
-}
-
-export async function resolveTenantContextBySlug(
-  sql: TeamSql,
-  userKeyRaw: string,
-  slugRaw: string,
-): Promise<TenantContext> {
-  const slug = requireSlug(slugRaw);
-  const tenants = await sql.query<{ id: string }>("SELECT id FROM team_tenant WHERE slug = $1", [slug]);
-  if (!tenants[0]) throw new TeamNotFoundError("not found");
-  return resolveTenantContext(sql, userKeyRaw, tenants[0].id);
 }
 
 export async function getTenant(sql: TeamSql, ctx: TenantContext): Promise<TeamTenant> {
@@ -302,39 +235,35 @@ export async function updateWorkspaceCollab(
   rejectCallerTenantId(write);
   await loadWorkspace(sql, ctx, workspaceId);
   const safe = assertAllowedCollab(write);
-  const policyJson = safe.policy === undefined ? undefined : safe.policy === null ? null : JSON.stringify(safe.policy);
-  const reviewJson = safe.review === undefined ? undefined : safe.review === null ? null : JSON.stringify(safe.review);
-  const reportJson =
-    safe.reportDto === undefined ? undefined : safe.reportDto === null ? null : JSON.stringify(safe.reportDto);
+  const touchPolicy = safe.policy !== undefined;
+  const touchReview = safe.review !== undefined;
+  const touchReport = safe.reportDto !== undefined;
+  const policyJson = touchPolicy ? (safe.policy === null ? null : JSON.stringify(safe.policy)) : null;
+  const reviewJson = touchReview ? (safe.review === null ? null : JSON.stringify(safe.review)) : null;
+  const reportJson = touchReport ? (safe.reportDto === null ? null : JSON.stringify(safe.reportDto)) : null;
 
-  const existing = await sql.query<CollabRow>(
-    "SELECT tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at FROM team_workspace_collab WHERE tenant_id = $1 AND workspace_id = $2",
-    [ctx.tenantId, workspaceId],
-  );
-  const prev = existing[0];
-  const nextPolicy = policyJson === undefined ? (prev?.policy_json ?? null) : policyJson;
-  const nextReview = reviewJson === undefined ? (prev?.review_json ?? null) : reviewJson;
-  const nextReport = reportJson === undefined ? (prev?.report_dto_json ?? null) : reportJson;
-  if (!prev) {
-    await sql.query(
-      "INSERT INTO team_workspace_collab (tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key) VALUES ($1, $2, $3, $4, $5, $6)",
-      [ctx.tenantId, workspaceId, nextPolicy, nextReview, nextReport, ctx.userKey],
-    );
-  } else {
-    await sql.query(
-      `UPDATE team_workspace_collab SET
-        policy_json = $3,
-        review_json = $4,
-        report_dto_json = $5,
-        updated_by_user_key = $6,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE tenant_id = $1 AND workspace_id = $2`,
-      [ctx.tenantId, workspaceId, nextPolicy, nextReview, nextReport, ctx.userKey],
-    );
-  }
   const rows = await sql.query<CollabRow>(
-    "SELECT tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at FROM team_workspace_collab WHERE tenant_id = $1 AND workspace_id = $2",
-    [ctx.tenantId, workspaceId],
+    `INSERT INTO team_workspace_collab (
+      tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key
+    ) VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (tenant_id, workspace_id) DO UPDATE SET
+      policy_json = CASE WHEN $7 THEN EXCLUDED.policy_json ELSE team_workspace_collab.policy_json END,
+      review_json = CASE WHEN $8 THEN EXCLUDED.review_json ELSE team_workspace_collab.review_json END,
+      report_dto_json = CASE WHEN $9 THEN EXCLUDED.report_dto_json ELSE team_workspace_collab.report_dto_json END,
+      updated_by_user_key = EXCLUDED.updated_by_user_key,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at`,
+    [
+      ctx.tenantId,
+      workspaceId,
+      policyJson,
+      reviewJson,
+      reportJson,
+      ctx.userKey,
+      touchPolicy,
+      touchReview,
+      touchReport,
+    ],
   );
   if (!rows[0]) throw new TeamNotFoundError("not found");
   return mapCollab(rows[0]);

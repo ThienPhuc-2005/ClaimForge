@@ -45,9 +45,9 @@ Raw loot/replay/curl export runs in the **browser** from the in-memory workspace
 - arbitrary headers (`X-Tenant-Id`, `Tenant`, …)
 - JWT / OIDC claims that have not been **linked** to a `team_member` row by server-side lookup
 
-Construction of `TenantContext` is branded (runtime symbol). A plain object `{ tenantId, userKey, role }` is rejected.
+Construction of `TenantContext` is branded (runtime symbol). A plain object `{ tenantId, userKey, role }` is rejected. `contextFromMember` is **not** a public API: a `TeamMember` row object is not a context, and no exported factory will brand an arbitrary member.
 
-Legal factories (P1.1):
+Legal factories (P1.1) — both stamp the brand only after SQL:
 
 1. **Bootstrap** (admin process): `unlockBootstrap(providedSecret, configuredSecret)` → `BootstrapActor` → `bootstrapTenant` inserts tenant + first owner in one transaction and returns a context built from the **inserted member row**.
 2. **Membership resolve:** `resolveTenantContext(sql, userKey, requestedTenantId?)` `SELECT`s `team_member`. The effective `tenantId` / `userKey` / `role` are copied from the **row**, not from the arguments. `requestedTenantId` is a disambiguation hint only; if the row is missing, fail closed (same as unknown tenant). If omitted and the user has one membership, use that row. If several, fail closed as ambiguous (do not pick arbitrarily).
@@ -116,7 +116,13 @@ Creating a tenant and assigning the first `owner` is an **operator procedure**, 
 | Workspace name, ids, role enum | PEM private keys, credential-shaped canaries |
 | | `tenantId` / `tenant_id` on caller persist input (spoof) |
 
-`updateWorkspaceCollab` runs `assertAllowedCollab` before SQL. Forbidden keys anywhere in the JSON, compact-JWT shaped strings, or ReportDTO missing `secrets: "redacted"` fail closed and write nothing.
+`updateWorkspaceCollab` runs `assertAllowedCollab` before SQL. ReportDTO is a **strict runtime schema** (unknown fields rejected), then deep-redacted again into a **new** object, then size-capped. Policy and review are allowlisted the same way. Compact-JWT shaped strings, live Bearer tokens, PEM, HAR `log.entries`, raw HTTP outside `replays.raw`/`curl`, `api_key` / `sessionSecret`, and oversize Base64 fail closed and write nothing.
+
+Read path (`getCollab`) re-parses stored JSON through the same sanitizer. A tampered row is `TeamPersistError`, not returned.
+
+Collab writes are a single `INSERT ... ON CONFLICT (tenant_id, workspace_id) DO UPDATE` so two first-writes cannot 23505 or split a row.
+
+UTF-8 byte caps: policy 64KiB, review 64KiB, ReportDTO 512KiB; string/fingerprint/array lengths are bounded.
 
 ReportDTO may still contain **redacted** loot/replay placeholders. That is not permission to store raw secrets. Deep-redaction canaries from P0.2 apply.
 

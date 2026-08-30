@@ -81,11 +81,11 @@ The browser desk and in-browser engine stay the product default. Team features r
 
 ## ADR-019 — TenantContext comes only from a verified membership or bootstrap row
 
-`tenant_id` is never read from body, query, arbitrary headers, or unlinked JWT claims. Repository functions accept a branded `TenantContext`. SQL always uses `ctx.tenantId` from that object. `resolveTenantContext` copies ids from the `team_member` row.
+`tenant_id` is never read from body, query, arbitrary headers, or unlinked JWT claims. Repository functions accept a branded `TenantContext`. SQL always uses `ctx.tenantId` from that object. `resolveTenantContext` copies ids from the `team_member` row. There is no public `contextFromMember`; only bootstrap (after insert) and resolve (after SELECT) stamp the brand.
 
 ## ADR-020 — Team persist allowlist is policy, review, ReportDTO
 
-No raw HAR, raw HTTP, JWT compact tokens, cookie values, or credentials on the Team server. Collab writes run `assertAllowedCollab`. Capture sharing is a later phase after threat-model + encryption work.
+No raw HAR, raw HTTP, JWT compact tokens, cookie values, or credentials on the Team server. Collab writes run `assertAllowedCollab`: strict ReportDTO schema (reject unknown fields), server-side deep-redaction into a new object, UTF-8 byte/element caps. Reads re-sanitize stored JSON. Capture sharing is a later phase after threat-model + encryption work.
 
 ## ADR-021 — OIDC client secrets are never plaintext in the database
 
@@ -130,3 +130,7 @@ P1.1 adversarial tests run against PGLite (transactional DDL, constraints, repo 
 ## ADR-031 — P1.1 ships no HTTP, UI, session, or OIDC
 
 The isolation kernel is a repository + migration + tests. Expanding to P1.2 without an explicit request is out of scope.
+
+## ADR-032 — Collab persist is schema + re-redact + upsert
+
+P1.1 persist is not a key-name heuristic. ReportDTO/policy/review are closed shapes. The object stored is a newly allocated, deep-redacted copy. `team_workspace_collab` writes use `INSERT ON CONFLICT DO UPDATE` so concurrent first-writes merge columns instead of racing SELECT+INSERT.
