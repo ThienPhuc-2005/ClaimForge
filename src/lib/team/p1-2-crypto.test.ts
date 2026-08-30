@@ -9,7 +9,7 @@ import { hashOidcState, pkceChallenge } from "./oidc-pkce.ts";
 import { deriveSealKey, sealUtf8, unsealUtf8 } from "./oidc-seal.ts";
 import { exchangeAuthorizationCode } from "./oidc-token.ts";
 import { oidcUserKey } from "./oidc-user-key.ts";
-import { inspectTeamOutboundUrl, postTeamOutbound } from "./outbound.ts";
+import { inspectTeamOutboundUrl, postTeamOutbound, TEAM_FETCH_MAX_BYTES } from "./outbound.ts";
 import { TeamAuthError, TeamValidationError } from "./errors.ts";
 
 const SEAL = "claimforge-team-seal-key-32bytes!";
@@ -38,6 +38,12 @@ test("user_key is oidc: plus sha256 of JSON [iss, sub]", () => {
   assert.equal(oidcUserKey("https://idp.example", "user-1").length, 5 + 64);
   assert.throws(() => oidcUserKey("", "user-1"), TeamValidationError);
   assert.throws(() => oidcUserKey("https://idp.example", 1 as never), TeamValidationError);
+  assert.notEqual(oidcUserKey("https://idp.example", "alice"), oidcUserKey("https://idp.example", " alice "));
+  assert.notEqual(oidcUserKey("https://idp.example", "alice"), oidcUserKey("https://idp.example", "alice "));
+  assert.equal(
+    oidcUserKey("https://idp.example", " alice "),
+    "oidc:" + createHash("sha256").update(JSON.stringify(["https://idp.example", " alice "]), "utf8").digest("hex"),
+  );
 });
 
 test("RFC 7636 S256 challenge vector and state is hashed", () => {
@@ -164,6 +170,77 @@ test("token POST to a private host is denied before fetch", async () => {
   assert.equal(called, 0);
 });
 
+test("token POST audit action is token-exchange not jwks-fetch", async () => {
+  const config = loadTeamOidcConfig(testEnv());
+  const { audit } = await postTeamOutbound(config.tokenEndpoint, {
+    allowlist: config.hostnameAllowlist,
+    body: new URLSearchParams({ grant_type: "authorization_code" }),
+    fetchImpl: (async () => jsonResponse({ id_token: "aaa.bbb.ccc" })) as typeof fetch,
+  });
+  assert.equal(audit.action, "token-exchange");
+
+  try {
+    await postTeamOutbound(config.tokenEndpoint, {
+      allowlist: config.hostnameAllowlist,
+      body: new URLSearchParams({ grant_type: "authorization_code" }),
+      fetchImpl: (async () => new Response(null, { status: 302, headers: { location: "https://idp.example/x" } })) as typeof fetch,
+    });
+    assert.fail("expected reject");
+  } catch (err) {
+    assert.equal((err as { audit?: { action?: string } }).audit?.action, "token-exchange");
+  }
+});
+
+test("token POST stops reading when the body exceeds the size cap", async () => {
+  const config = loadTeamOidcConfig(testEnv());
+  let pulled = 0;
+  const cap = 1024;
+  const fetchImpl = (async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled === 1) controller.enqueue(new Uint8Array(cap));
+        else {
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  await assert.rejects(
+    () =>
+      postTeamOutbound(config.tokenEndpoint, {
+        allowlist: config.hostnameAllowlist,
+        body: new URLSearchParams({ code: "x" }),
+        fetchImpl,
+        maxBytes: cap,
+      }),
+    TeamAuthError,
+  );
+  assert.equal(pulled, 2);
+  assert.ok(pulled < 8);
+
+  let fetched = 0;
+  const oversizedHeader = (async () => {
+    fetched += 1;
+    return new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json", "content-length": String(TEAM_FETCH_MAX_BYTES + 1) },
+    });
+  }) as typeof fetch;
+  await assert.rejects(
+    () =>
+      postTeamOutbound(config.tokenEndpoint, {
+        allowlist: config.hostnameAllowlist,
+        body: new URLSearchParams({ code: "x" }),
+        fetchImpl: oversizedHeader,
+      }),
+    TeamAuthError,
+  );
+  assert.equal(fetched, 1);
+});
+
 async function rsaKid(kid: string) {
   const pair = await generateKeyPair("RS256", { extractable: true });
   const jwk = await exportJWK(pair.publicKey);
@@ -276,4 +353,41 @@ test("ID token rejects none, HS256, wrong aud, nonce, exp, and issuer", async ()
     async () => verifyTeamIdToken(await mint({ iss: "https://evil.example" }), { config, nonce: "n1", fetchImpl, now }),
     TeamAuthError,
   );
+});
+
+test("ID token rejects future iat and stale iat", async () => {
+  resetTeamJwksCache();
+  const config = loadTeamOidcConfig(testEnv());
+  const k1 = await rsaKid("k1");
+  const fetchImpl = (async () => jsonResponse({ keys: [k1.jwk] })) as typeof fetch;
+  const now = new Date(1_700_000_000_000);
+  async function mintIat(iatMs: number) {
+    return new SignJWT({ nonce: "n1", sub: "user-1" })
+      .setProtectedHeader({ alg: "RS256", kid: "k1" })
+      .setIssuer(config.issuer)
+      .setAudience(config.clientId)
+      .setIssuedAt(new Date(iatMs))
+      .setExpirationTime(new Date(now.getTime() + 300_000))
+      .sign(k1.privateKey);
+  }
+  await assert.rejects(
+    async () => verifyTeamIdToken(await mintIat(now.getTime() + 120_000), { config, nonce: "n1", fetchImpl, now }),
+    TeamAuthError,
+  );
+  await assert.rejects(
+    async () => verifyTeamIdToken(await mintIat(now.getTime() - 20 * 60_000), { config, nonce: "n1", fetchImpl, now }),
+    TeamAuthError,
+  );
+  const ok = await verifyTeamIdToken(await mintIat(now.getTime()), { config, nonce: "n1", fetchImpl, now });
+  assert.equal(ok.sub, "user-1");
+
+  const spaced = await new SignJWT({ nonce: "n1", sub: " alice " })
+    .setProtectedHeader({ alg: "RS256", kid: "k1" })
+    .setIssuer(config.issuer)
+    .setAudience(config.clientId)
+    .setIssuedAt(now)
+    .setExpirationTime(new Date(now.getTime() + 300_000))
+    .sign(k1.privateKey);
+  const exact = await verifyTeamIdToken(spaced, { config, nonce: "n1", fetchImpl, now });
+  assert.equal(exact.sub, " alice ");
 });

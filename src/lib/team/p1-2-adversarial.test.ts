@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { unlockBootstrap } from "./context.ts";
-import { TEAM_SESSION_COOKIE, readTeamSessionToken } from "./cookie.ts";
+import { TEAM_SESSION_COOKIE, readTeamSessionToken, requestIsHttps } from "./cookie.ts";
 import { loadTeamOidcConfig } from "./oidc-config.ts";
 import {
   handleTeamOidcCallback,
@@ -127,7 +127,54 @@ test("missing OIDC env fail-closes login with 503", async () => {
     env: {},
   });
   assert.equal(res.status, 503);
+  assert.equal(res.headers.get("cache-control"), "no-store");
+  assert.equal(res.headers.get("pragma"), "no-cache");
   assert.equal(((await res.json()) as { error: string }).error, "oidc is not configured");
+});
+
+test("X-Forwarded-Proto is ignored unless CLAIMFORGE_TEAM_TRUST_PROXY is set", async () => {
+  const { sql } = await openP12();
+  const config = loadTeamOidcConfig(testEnv());
+  const httpReq = new Request("http://app.example/api/team/oidc/login?slug=acme", {
+    headers: { "x-forwarded-proto": "https" },
+  });
+  assert.equal(requestIsHttps(httpReq), false);
+  assert.equal(requestIsHttps(httpReq, {}), false);
+  assert.equal(requestIsHttps(httpReq, { CLAIMFORGE_TEAM_TRUST_PROXY: "true" }), true);
+  const denied = await handleTeamOidcLogin(httpReq, { sql, config });
+  assert.equal(denied.status, 400);
+  const allowed = await handleTeamOidcLogin(httpReq, {
+    sql,
+    config,
+    env: { CLAIMFORGE_TEAM_TRUST_PROXY: "true" },
+  });
+  assert.equal(allowed.status, 302);
+  assert.equal(requestIsHttps(new Request("https://app.example/api/team/oidc/login?slug=acme")), true);
+});
+
+test("valid unknown slug is indistinguishable from a live tenant at login", async () => {
+  const { sql } = await openP12();
+  await bootstrapTenant(sql, unlockBootstrap(BOOTSTRAP, BOOTSTRAP), {
+    slug: "acme",
+    name: "Acme",
+    ownerUserKey: oidcUserKey(ISS, SUB),
+  });
+  const config = loadTeamOidcConfig(testEnv());
+  const live = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=acme"), {
+    sql,
+    config,
+  });
+  const ghost = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=nope"), {
+    sql,
+    config,
+  });
+  assert.equal(live.status, ghost.status);
+  assert.equal(live.status, 302);
+  const liveLoc = new URL(live.headers.get("location") ?? "");
+  const ghostLoc = new URL(ghost.headers.get("location") ?? "");
+  assert.equal(liveLoc.origin + liveLoc.pathname, ghostLoc.origin + ghostLoc.pathname);
+  const tenants = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_tenant");
+  assert.equal(tenants[0]?.n, "1");
 });
 
 test("ID token tenant_id and role claims cannot switch tenant", async () => {

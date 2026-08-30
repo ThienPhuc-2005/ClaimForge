@@ -11,7 +11,7 @@ export interface JwksFetchNotice {
 }
 
 export interface JwksAudit {
-  action: "jwks-fetch";
+  action: "jwks-fetch" | "token-exchange";
   hostname: string;
   result: "ok" | "denied" | "error";
   status?: number;

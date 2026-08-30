@@ -21,6 +21,7 @@ import { oidcUserKey } from "./oidc-user-key.ts";
 import { bootstrapTenant } from "./repo.ts";
 import {
   SESSION_ROTATE_AFTER_MS,
+  SESSION_ROTATE_GRACE_MS,
   loadTeamSession,
   mintTeamSession,
   remainingSessionMaxAge,
@@ -156,9 +157,43 @@ test("session rotation is atomic after 6 hours and keeps the original expiry", a
   assert.ok(rotated);
   assert.notEqual(rotated.token, minted.token);
   assert.equal(rotated.session.expiresAt.toISOString(), minted.session.expiresAt.toISOString());
-  assert.equal(await loadTeamSession(sql, minted.token, later), null);
+  assert.equal((await loadTeamSession(sql, minted.token, later))?.session.id, minted.session.id);
   assert.equal((await loadTeamSession(sql, rotated.token, later))?.session.id, minted.session.id);
+  const afterGrace = new Date(later.getTime() + SESSION_ROTATE_GRACE_MS + 1);
+  assert.equal(await loadTeamSession(sql, minted.token, afterGrace), null);
+  assert.equal((await loadTeamSession(sql, rotated.token, afterGrace))?.session.id, minted.session.id);
   assert.equal(remainingSessionMaxAge(rotated.session, t0), 12 * 60 * 60);
+});
+
+test("concurrent rotation does not log out the losing request", async () => {
+  const { sql } = await openP12();
+  const a = await bootstrapTenant(sql, unlockBootstrap(BOOTSTRAP, BOOTSTRAP), {
+    slug: "acme",
+    name: "Acme",
+    ownerUserKey: "alice",
+  });
+  const t0 = new Date("2026-08-30T10:00:00.000Z");
+  const minted = await mintTeamSession(sql, a.context, t0);
+  const later = new Date(t0.getTime() + SESSION_ROTATE_AFTER_MS);
+  const [one, two] = await Promise.all([
+    rotateTeamSession(sql, minted.token, later),
+    rotateTeamSession(sql, minted.token, later),
+  ]);
+  assert.ok(one);
+  assert.ok(two);
+  assert.equal(one.session.id, minted.session.id);
+  assert.equal(two.session.id, minted.session.id);
+  assert.equal(one.session.expiresAt.toISOString(), minted.session.expiresAt.toISOString());
+  assert.equal(two.session.expiresAt.toISOString(), minted.session.expiresAt.toISOString());
+  assert.ok(await loadTeamSession(sql, one.token, later));
+  assert.ok(await loadTeamSession(sql, two.token, later));
+  assert.ok(await loadTeamSession(sql, minted.token, later));
+  const afterGrace = new Date(later.getTime() + SESSION_ROTATE_GRACE_MS + 1);
+  const winner = one.token === minted.token ? two.token : one.token;
+  assert.ok(await loadTeamSession(sql, winner, afterGrace));
+  if (winner !== minted.token) {
+    assert.equal(await loadTeamSession(sql, minted.token, afterGrace), null);
+  }
 });
 
 function jsonResponse(body: unknown) {
@@ -174,7 +209,7 @@ async function rsaKid(kid: string) {
   return { ...pair, jwk };
 }
 
-test("login requires HTTPS and a live tenant slug", async () => {
+test("login requires HTTPS and a syntactically valid slug", async () => {
   const { sql } = await openP12();
   await bootstrapTenant(sql, unlockBootstrap(BOOTSTRAP, BOOTSTRAP), {
     slug: "acme",
@@ -187,17 +222,27 @@ test("login requires HTTPS and a live tenant slug", async () => {
     config,
   });
   assert.equal(http.status, 400);
+  assert.equal(http.headers.get("cache-control"), "no-store");
+  const spoof = await handleTeamOidcLogin(
+    new Request("http://app.example/api/team/oidc/login?slug=acme", { headers: { "x-forwarded-proto": "https" } }),
+    { sql, config },
+  );
+  assert.equal(spoof.status, 400);
   const missing = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login"), { sql, config });
   assert.equal(missing.status, 404);
   const unknown = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=nope"), {
     sql,
     config,
   });
-  assert.equal(unknown.status, 404);
   const ok = await handleTeamOidcLogin(new Request("https://app.example/api/team/oidc/login?slug=acme"), { sql, config });
+  assert.equal(unknown.status, 302);
   assert.equal(ok.status, 302);
+  assert.equal(ok.headers.get("cache-control"), "no-store");
+  assert.equal(ok.headers.get("pragma"), "no-cache");
   const loc = new URL(ok.headers.get("location") ?? "");
+  const ghost = new URL(unknown.headers.get("location") ?? "");
   assert.equal(loc.origin + loc.pathname, "https://idp-session.example/authorize");
+  assert.equal(ghost.origin + ghost.pathname, loc.origin + loc.pathname);
   assert.equal(loc.searchParams.get("code_challenge_method"), "S256");
   assert.doesNotMatch(loc.href, /client_secret|confidential-client/);
 });
@@ -244,6 +289,8 @@ test("callback mints a tenant-bound session and unknown subjects are not provisi
     { sql, config, fetchImpl, now },
   );
   assert.equal(cb.status, 302);
+  assert.equal(cb.headers.get("cache-control"), "no-store");
+  assert.equal(cb.headers.get("referrer-policy"), "no-referrer");
   const cookie = cb.headers.get("set-cookie") ?? "";
   assert.match(cookie, new RegExp(TEAM_SESSION_COOKIE));
   const token = readTeamSessionToken(cookie);
@@ -253,6 +300,7 @@ test("callback mints a tenant-bound session and unknown subjects are not provisi
     { sql, config, now },
   );
   assert.equal(session.status, 200);
+  assert.equal(session.headers.get("cache-control"), "no-store");
   const body = (await session.json()) as { userKey: string; tenantId: string; tenants?: unknown };
   assert.equal(body.userKey, userKey);
   assert.equal("tenants" in body, false);
@@ -289,6 +337,7 @@ test("callback mints a tenant-bound session and unknown subjects are not provisi
     { sql, config, now },
   );
   assert.equal(logout.status, 200);
+  assert.equal(logout.headers.get("cache-control"), "no-store");
   const after = await handleTeamSession(new Request("https://app.example/api/team/session", { headers: { cookie } }), {
     sql,
     config,

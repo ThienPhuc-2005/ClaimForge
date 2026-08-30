@@ -77,7 +77,8 @@ An attacker must not:
 - Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use).
 - Read a raw session token or ID/access/refresh token from the database.
 - Use a session after the member row is deleted.
-- Start Team OIDC on HTTP or without a live tenant slug.
+- Start Team OIDC on HTTP (or spoof HTTPS via `X-Forwarded-Proto` without a trusted-proxy flag) or without a syntactically valid tenant slug.
+- Learn whether a tenant slug exists from login status (valid slugs all 302; existence is fail-closed at callback).
 - Point token/JWKS fetch at an unallowlisted or private host (SSRF).
 - CSRF-logout a session from another origin.
 

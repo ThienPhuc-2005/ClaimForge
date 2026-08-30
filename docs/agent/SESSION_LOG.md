@@ -1,3 +1,10 @@
+## 2026-08-30 — P1.2-R1 review blockers
+
+- Stream-capped token POST body (no `arrayBuffer` then size check). Audit action `token-exchange`.
+- `X-Forwarded-Proto` ignored unless `CLAIMFORGE_TEAM_TRUST_PROXY`. Login slug is not a tenant-existence oracle.
+- Exact OIDC `sub` (no trim). ID token `iat` future/stale window. `Cache-Control: no-store` on auth HTTP. Rotate previous-hash 60s grace.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
 ## 2026-08-30 — P1.2 customer OIDC + opaque sessions
 
 - Branch `feat/p1.2-oidc-sessions` from `origin/main` `f1a0771`. Did not merge. Did not touch `0003` or the P1.1 kernel.

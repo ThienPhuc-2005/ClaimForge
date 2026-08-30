@@ -18,6 +18,7 @@ CREATE INDEX team_oidc_pending_expires_idx ON team_oidc_pending (expires_at);
 CREATE TABLE team_session (
   id TEXT PRIMARY KEY,
   token_hash TEXT NOT NULL UNIQUE,
+  prev_token_hash TEXT,
   tenant_id TEXT NOT NULL,
   user_key TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
@@ -31,3 +32,4 @@ CREATE TABLE team_session (
 
 CREATE INDEX team_session_member_idx ON team_session (tenant_id, user_key);
 CREATE INDEX team_session_expires_idx ON team_session (expires_at);
+CREATE INDEX team_session_prev_hash_idx ON team_session (prev_token_hash);

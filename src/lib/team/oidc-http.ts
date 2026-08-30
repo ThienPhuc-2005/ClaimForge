@@ -29,10 +29,23 @@ export type TeamHttpDeps = {
   env?: Record<string, string | undefined>;
 };
 
+const AUTH_HEADERS: Record<string, string> = {
+  "Cache-Control": "no-store",
+  Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer",
+};
+
 function json(status: number, body: Record<string, unknown>, extra?: HeadersInit): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", ...extra },
+    headers: { "content-type": "application/json", ...AUTH_HEADERS, ...extra },
+  });
+}
+
+function redirect(location: string, extra?: HeadersInit): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: location, ...AUTH_HEADERS, ...extra },
   });
 }
 
@@ -52,8 +65,8 @@ function fail(err: unknown): Response {
   return json(401, { error: "login failed" });
 }
 
-function requireHttps(request: Request): void {
-  if (!requestIsHttps(request)) throw new TeamAuthError("oidc requires HTTPS");
+function requireHttps(request: Request, env?: Record<string, string | undefined>): void {
+  if (!requestIsHttps(request, env)) throw new TeamAuthError("oidc requires HTTPS");
 }
 
 async function depsOrLoad(deps: TeamHttpDeps = {}): Promise<{ sql: TeamSql; config: TeamOidcConfig; now: Date }> {
@@ -90,13 +103,11 @@ export function authorizationRedirectUrl(
 
 export async function handleTeamOidcLogin(request: Request, deps: TeamHttpDeps = {}): Promise<Response> {
   try {
-    requireHttps(request);
+    requireHttps(request, deps.env);
     const { sql, config, now } = await depsOrLoad(deps);
     const slug = new URL(request.url).searchParams.get("slug");
     if (!slug) throw new TeamValidationError("slug is required");
     const tenantSlug = requireSlug(slug);
-    const tenants = await sql.query<{ id: string }>("SELECT id FROM team_tenant WHERE slug = $1", [tenantSlug]);
-    if (!tenants[0]) throw new TeamNotFoundError("not found");
     const secrets = newOidcLoginSecrets();
     await insertOidcPending(sql, config, {
       state: secrets.state,
@@ -106,10 +117,7 @@ export async function handleTeamOidcLogin(request: Request, deps: TeamHttpDeps =
       slug: tenantSlug,
       now,
     });
-    return new Response(null, {
-      status: 302,
-      headers: { Location: authorizationRedirectUrl(config, secrets) },
-    });
+    return redirect(authorizationRedirectUrl(config, secrets));
   } catch (err) {
     return fail(err);
   }
@@ -117,7 +125,7 @@ export async function handleTeamOidcLogin(request: Request, deps: TeamHttpDeps =
 
 export async function handleTeamOidcCallback(request: Request, deps: TeamHttpDeps = {}): Promise<Response> {
   try {
-    requireHttps(request);
+    requireHttps(request, deps.env);
     const { sql, config, now } = await depsOrLoad(deps);
     const url = new URL(request.url);
     const code = url.searchParams.get("code") ?? "";
@@ -137,12 +145,8 @@ export async function handleTeamOidcCallback(request: Request, deps: TeamHttpDep
     const userKey = oidcUserKey(claims.iss, claims.sub);
     const context = await resolveTenantContextBySlug(sql, userKey, pending.slug);
     const minted = await mintTeamSession(sql, context, now);
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: "/",
-        "Set-Cookie": serializeTeamSessionCookie(minted.token, remainingSessionMaxAge(minted.session, now)),
-      },
+    return redirect("/", {
+      "Set-Cookie": serializeTeamSessionCookie(minted.token, remainingSessionMaxAge(minted.session, now)),
     });
   } catch (err) {
     return fail(err);
@@ -151,7 +155,7 @@ export async function handleTeamOidcCallback(request: Request, deps: TeamHttpDep
 
 export async function handleTeamOidcLogout(request: Request, deps: TeamHttpDeps = {}): Promise<Response> {
   try {
-    requireHttps(request);
+    requireHttps(request, deps.env);
     if (request.method !== "POST") return json(405, { error: "login failed" });
     if (!sameOrigin(request)) return json(401, { error: "login failed" });
     const { sql, now } = await depsOrLoad(deps);
@@ -168,15 +172,18 @@ export async function handleTeamOidcLogout(request: Request, deps: TeamHttpDeps 
 
 export async function handleTeamSession(request: Request, deps: TeamHttpDeps = {}): Promise<Response> {
   try {
-    requireHttps(request);
+    requireHttps(request, deps.env);
     const { sql, now } = await depsOrLoad(deps);
     const token = readTeamSessionToken(request.headers.get("cookie"));
     if (!token) return json(401, { error: "login failed" });
     const rotated = await rotateTeamSession(sql, token, now);
     if (!rotated) return json(401, { error: "login failed" });
-    const headers: HeadersInit = { "content-type": "application/json" };
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      ...AUTH_HEADERS,
+    };
     if (rotated.token !== token) {
-      (headers as Record<string, string>)["Set-Cookie"] = serializeTeamSessionCookie(
+      headers["Set-Cookie"] = serializeTeamSessionCookie(
         rotated.token,
         remainingSessionMaxAge(rotated.session, now),
       );

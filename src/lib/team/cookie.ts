@@ -1,4 +1,5 @@
 export const TEAM_SESSION_COOKIE = "__Host-claimforge-team.session";
+export const TRUST_PROXY_ENV = "CLAIMFORGE_TEAM_TRUST_PROXY";
 
 const ATTR = "Path=/; Secure; HttpOnly; SameSite=Strict";
 
@@ -24,9 +25,24 @@ export function readTeamSessionToken(cookieHeader: string | null | undefined): s
   return null;
 }
 
-export function requestIsHttps(request: Request): boolean {
+/** Opt-in only. `"true"` / `"1"` / `"yes"` (case-insensitive). */
+export function trustProxyEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = env[TRUST_PROXY_ENV];
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return value === "1" || value === "true" || value === "yes";
+}
+
+/**
+ * HTTPS is the request URL protocol. `X-Forwarded-Proto` is ignored unless
+ * `CLAIMFORGE_TEAM_TRUST_PROXY` is explicitly enabled.
+ */
+export function requestIsHttps(
+  request: Request,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
   const url = new URL(request.url);
   if (url.protocol === "https:") return true;
+  if (!trustProxyEnabled(env)) return false;
   const forwarded = request.headers.get("x-forwarded-proto");
   return forwarded?.split(",")[0]?.trim().toLowerCase() === "https";
 }

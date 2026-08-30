@@ -146,7 +146,8 @@ UTF-8 byte caps: policy 64KiB, review 64KiB, ReportDTO 512KiB; string/fingerprin
 14. Unverified OIDC tokens never become `TenantContext`; JWT `tenant_id`/`role` claims are ignored.
 15. Unknown OIDC subject is 404; no JIT `team_member`.
 16. Session DB stores token hash only; deleted members cannot reuse a session.
-17. Team OIDC is HTTPS-only with `__Host-` cookie; HTTP login is 400.
+17. Team OIDC is HTTPS-only with `__Host-` cookie; HTTP login is 400. `X-Forwarded-Proto` is not trusted unless `CLAIMFORGE_TEAM_TRUST_PROXY` is set.
+18. A syntactically valid login slug does not reveal whether the tenant exists (same 302 as a live slug).
 
 ---
 
@@ -156,11 +157,11 @@ Instance-wide confidential OIDC client. Endpoints and secrets are env-only (`CLA
 
 **Authorization Code + PKCE S256.** Static authorization/token/JWKS URLs (no discovery). State and nonce are CSPRNG. `team_oidc_pending` stores `state_hash`, nonce, code_challenge, AES-256-GCM `verifier_ciphertext`, redirect_uri, and `tenant_slug`. Consume is single-use (`consumed_at`) with a 10-minute TTL.
 
-**JWKS / token fetch.** Reuse `inspectJwksUrl` / `fetchJwksDocument` with `teamMode: true` and a closed allowlist. Token POST: `credentials:omit`, `redirect:manual` (3xx denied), timeout/size/content-type limits. No `createRemoteJWKSet`. Local verify via `createLocalJWKSet`; cache TTL 5 minutes; unknown `kid` refetches at most once. ID token algs: RS256 / PS256 / ES256 only; reject `none` and HS*.
+**JWKS / token fetch.** Reuse `inspectJwksUrl` / `fetchJwksDocument` with `teamMode: true` and a closed allowlist. Token POST: `credentials:omit`, `redirect:manual` (3xx denied), timeout/content-type limits, body read from the stream and aborted as soon as it exceeds the size cap (not `arrayBuffer()` then check). Audit `action` for that POST is `token-exchange`, not `jwks-fetch`. No `createRemoteJWKSet`. Local verify via `createLocalJWKSet`; cache TTL 5 minutes; unknown `kid` refetches at most once. ID token algs: RS256 / PS256 / ES256 only; reject `none` and HS*. `iat` must not be more than 30s in the future and not older than 5 minutes (authorization-code freshness).
 
-**Login bind.** `GET /api/team/oidc/login?slug=` requires HTTPS and a live tenant slug. Callback verifies the ID token, maps `iss`+`sub` to `user_key`, then `resolveTenantContextBySlug` — **no JIT** `team_member` insert. Unknown subject or membership in a different tenant is 404.
+**Login bind.** `GET /api/team/oidc/login?slug=` requires HTTPS (request URL protocol; `X-Forwarded-Proto` is ignored unless `CLAIMFORGE_TEAM_TRUST_PROXY` is set) and a **syntactically valid** slug. Login does **not** probe `team_tenant` — a live slug and an unknown valid slug both 302 to the IdP so existence is not an oracle. Callback verifies the ID token (exact `sub`, no trim), maps `iss`+`sub` to `user_key`, then `resolveTenantContextBySlug` — **no JIT** `team_member` insert. Unknown subject, unknown slug, or membership in a different tenant is 404.
 
-**Opaque session.** `randomBytes(32)` base64url; DB stores SHA-256 only. `tenant_id NOT NULL` and `FOREIGN KEY (tenant_id, user_key) → team_member ON DELETE CASCADE`. TTL 12 hours from `created_at`; atomic `UPDATE token_hash` after 6 hours; revoke sets `revoked_at`. Cookie `__Host-claimforge-team.session`: Secure, HttpOnly, Path=/, SameSite=Strict, no Domain. HTTPS-only. `GET /api/team/session` returns `{userKey, tenantId}` — no tenant list, no role. Logout is local revoke only (`POST /api/team/oidc/logout`, same-origin).
+**Opaque session.** `randomBytes(32)` base64url; DB stores SHA-256 only. `tenant_id NOT NULL` and `FOREIGN KEY (tenant_id, user_key) → team_member ON DELETE CASCADE`. TTL 12 hours from `created_at`; atomic `UPDATE token_hash` after 6 hours (previous hash stays valid for 60s so a concurrent request is not logged out; expiry is not extended). Revoke sets `revoked_at`. Cookie `__Host-claimforge-team.session`: Secure, HttpOnly, Path=/, SameSite=Strict, no Domain. HTTPS-only. Login/callback/logout/session responses set `Cache-Control: no-store` and `Pragma: no-cache`; callback also `Referrer-Policy: no-referrer`. `GET /api/team/session` returns `{userKey, tenantId}` — no tenant list, no role. Logout is local revoke only (`POST /api/team/oidc/logout`, same-origin).
 
 **Client secrets:** stay in env. They are not written to Postgres.
 

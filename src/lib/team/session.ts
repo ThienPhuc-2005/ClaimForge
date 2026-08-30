@@ -5,6 +5,8 @@ import type { TeamSql } from "./types.ts";
 
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export const SESSION_ROTATE_AFTER_MS = 6 * 60 * 60 * 1000;
+/** Previous token stays valid this long after an atomic rotate (concurrent in-flight requests). */
+export const SESSION_ROTATE_GRACE_MS = 60 * 1000;
 
 export type TeamSession = {
   id: string;
@@ -73,11 +75,16 @@ export async function loadTeamSession(
   now: Date = new Date(),
 ): Promise<{ session: TeamSession; context: TenantContext } | null> {
   if (!token) return null;
+  const graceStart = new Date(now.getTime() - SESSION_ROTATE_GRACE_MS);
   const rows = await sql.query<SessionRow>(
     `SELECT id, token_hash, tenant_id, user_key, created_at, rotated_at, expires_at
      FROM team_session
-     WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2`,
-    [hashToken(token), now.toISOString()],
+     WHERE revoked_at IS NULL AND expires_at > $2
+       AND (
+         token_hash = $1
+         OR (prev_token_hash = $1 AND rotated_at IS NOT NULL AND rotated_at > $3)
+       )`,
+    [hashToken(token), now.toISOString(), graceStart.toISOString()],
   );
   const row = rows[0];
   if (!row) return null;
@@ -105,13 +112,14 @@ export async function rotateTeamSession(
   if (!loaded) return null;
   if (!sessionNeedsRotation(loaded.session, now)) return { token, ...loaded };
   const next = newToken();
+  const oldHash = hashToken(token);
   return sql.transaction(async (tx) => {
     const rows = await tx.query<SessionRow>(
       `UPDATE team_session
-       SET token_hash = $1, rotated_at = $2
+       SET token_hash = $1, prev_token_hash = $4, rotated_at = $2
        WHERE id = $3 AND token_hash = $4 AND revoked_at IS NULL AND expires_at > $2
        RETURNING id, token_hash, tenant_id, user_key, created_at, rotated_at, expires_at`,
-      [hashToken(next), now.toISOString(), loaded.session.id, hashToken(token)],
+      [hashToken(next), now.toISOString(), loaded.session.id, oldHash],
     );
     if (!rows[0]) {
       const again = await loadTeamSession(tx, token, now);
@@ -127,7 +135,7 @@ export async function revokeTeamSession(sql: TeamSql, token: string, now: Date =
   if (!token) return;
   await sql.query(
     `UPDATE team_session SET revoked_at = $2
-     WHERE token_hash = $1 AND revoked_at IS NULL`,
+     WHERE (token_hash = $1 OR prev_token_hash = $1) AND revoked_at IS NULL`,
     [hashToken(token), now.toISOString()],
   );
 }

@@ -4,7 +4,9 @@ import type { TeamOidcConfig } from "./oidc-config.ts";
 import { teamJwkProvider } from "./oidc-jwks.ts";
 
 export const TEAM_ID_TOKEN_ALGS = ["RS256", "PS256", "ES256"] as const;
-const SKEW_SEC = 30;
+export const TEAM_ID_TOKEN_SKEW_SEC = 30;
+/** ID token from an authorization-code exchange must be recently issued. */
+export const TEAM_ID_TOKEN_MAX_AGE_SEC = 5 * 60;
 
 function audList(aud: unknown): string[] {
   if (typeof aud === "string") return [aud];
@@ -37,14 +39,14 @@ export async function verifyTeamIdToken(
       algorithms: [...TEAM_ID_TOKEN_ALGS],
       issuer: opts.config.issuer,
       audience: opts.config.clientId,
-      clockTolerance: SKEW_SEC,
+      clockTolerance: TEAM_ID_TOKEN_SKEW_SEC,
       currentDate: opts.now,
     });
     payload = verified.payload as Record<string, unknown>;
   } catch {
     throw new TeamAuthError("login failed");
   }
-  const sub = typeof payload.sub === "string" ? payload.sub.trim() : "";
+  const sub = typeof payload.sub === "string" ? payload.sub : "";
   const iss = typeof payload.iss === "string" ? payload.iss : "";
   const nonce = typeof payload.nonce === "string" ? payload.nonce : "";
   if (!sub || !iss) throw new TeamAuthError("login failed");
@@ -56,7 +58,12 @@ export async function verifyTeamIdToken(
   } else if (payload.azp !== undefined && payload.azp !== opts.config.clientId) {
     throw new TeamAuthError("login failed");
   }
-  if (typeof payload.iat !== "number") throw new TeamAuthError("login failed");
+  if (typeof payload.iat !== "number" || !Number.isFinite(payload.iat)) throw new TeamAuthError("login failed");
   if (typeof payload.exp !== "number") throw new TeamAuthError("login failed");
+  const nowSec = Math.floor((opts.now ?? new Date()).getTime() / 1000);
+  if (payload.iat > nowSec + TEAM_ID_TOKEN_SKEW_SEC) throw new TeamAuthError("login failed");
+  if (payload.iat < nowSec - (TEAM_ID_TOKEN_MAX_AGE_SEC + TEAM_ID_TOKEN_SKEW_SEC)) {
+    throw new TeamAuthError("login failed");
+  }
   return { iss, sub };
 }

@@ -146,10 +146,12 @@ Locked for the P1.2 epic:
 - One IdP per ClaimForge instance, env-configured (`CLAIMFORGE_TEAM_OIDC_*`). Confidential client; `client_secret` and `CLAIMFORGE_TEAM_SEAL_KEY` never enter Postgres, logs, or JSON serialization (WeakMap).
 - Authorization Code + PKCE S256. Static authorization/token/JWKS endpoints (no discovery). Closed hostname allowlist is mandatory. Fail-closed if issuer, endpoints, allowlist, secret, or seal key is missing.
 - JWKS: reuse P0.6 SSRF gate (`teamMode`, `credentials:omit`, `redirect:manual`). `createLocalJWKSet` only — never `createRemoteJWKSet`. Cache with TTL; unknown `kid` refetches at most once.
-- ID token: RS256/PS256/ES256; reject `none` and HS*; verify sig/iss/aud/azp/exp/iat/nonce.
-- `user_key = "oidc:" + sha256(JSON.stringify([iss, sub]))`. Login requires `?slug=` of a live tenant. No JIT `team_member`. JWT `tenant_id`/`role` are not trusted.
-- Sessions: CSPRNG 32-byte token, SHA-256 in `team_session`, `tenant_id NOT NULL`, FK to `team_member ON DELETE CASCADE`. TTL 12h from `created_at`; atomic rotate after 6h. Cookie `__Host-claimforge-team.session` Secure+HttpOnly+Path=/+SameSite=Strict, no Domain. HTTPS-only.
+- ID token: RS256/PS256/ES256; reject `none` and HS*; verify sig/iss/aud/azp/exp/iat/nonce. `iat` may be at most 30s in the future and at most 5 minutes old (code-exchange freshness). `sub` is the exact OIDC subject (no trim).
+- `user_key = "oidc:" + sha256(JSON.stringify([iss, sub]))`. Login requires a syntactically valid `?slug=`; it does not probe tenant existence (no 302/404 oracle). Tenant/membership fail-closed at callback. No JIT `team_member`. JWT `tenant_id`/`role` are not trusted.
+- Sessions: CSPRNG 32-byte token, SHA-256 in `team_session`, `tenant_id NOT NULL`, FK to `team_member ON DELETE CASCADE`. TTL 12h from `created_at`; atomic rotate after 6h with 60s previous-token grace so concurrent requests are not logged out. Cookie `__Host-claimforge-team.session` Secure+HttpOnly+Path=/+SameSite=Strict, no Domain. HTTPS is the request URL protocol; `X-Forwarded-Proto` is ignored unless `CLAIMFORGE_TEAM_TRUST_PROXY` is set.
 - `code_verifier` is AES-256-GCM sealed with a key derived from `CLAIMFORGE_TEAM_SEAL_KEY`. State stored as hash. Pending is single-use.
+- Token POST body is read from the stream and aborted at the size cap. Audit action is `token-exchange`.
+- Auth HTTP responses set `Cache-Control: no-store` (and `Pragma: no-cache`); callback sets `Referrer-Policy: no-referrer`.
 - Neon `TeamSql.transaction` checks out **one** connection for BEGIN/queries/COMMIT (SAVEPOINTs for nesting). No pooled BEGIN/COMMIT.
 - Logout is local revoke only. No tenant list in P1.2. Not Grok Better Auth.
 
