@@ -58,3 +58,11 @@ export class TeamAuthError extends TeamError {
     this.name = "TeamAuthError";
   }
 }
+
+/** Same-tenant privilege denial. Not used for missing/cross-tenant (those stay not-found). */
+export class TeamForbiddenError extends TeamError {
+  constructor(message = "forbidden") {
+    super("forbidden", message);
+    this.name = "TeamForbiddenError";
+  }
+}

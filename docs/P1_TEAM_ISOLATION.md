@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is implemented on `feat/p1.2-oidc-sessions` (additive `0004`, env IdP, Authorization Code + PKCE, hashed sessions, operator CLI bootstrap). P1.3+ (RBAC HTTP, audit, collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is on `main` (PR #2 squash `6de17a4`). P1.3 RBAC HTTP is implemented on `feat/p1.3-rbac-http`. P1.4+ (audit, collab HTTP, UI) stay out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 
@@ -104,7 +104,7 @@ Creating a tenant and assigning the first `owner` is an **operator procedure**, 
 - CLI stdout is tenant id, slug, and derived `user_key` only. It must not log the bootstrap secret, client secret, tokens, or raw `sub`.
 - Fail-closed if input/env is missing, `team_tenant` / `team_member` are not migrated, or the slug already exists.
 - Tenant insert + owner insert are one transaction. Failure rolls back both (no ownerless tenant, no member without tenant).
-- Subsequent members are added only through a verified `TenantContext` of **that** tenant. P1.1 does not yet enforce which roles may add members (RBAC is P1.3); isolation still prevents adding a member to a different tenant.
+- Subsequent members are added only through a verified `TenantContext` of **that** tenant. P1.3 enforces who may add/change/remove members (admin+, no assigning `owner`, last owner protected). Isolation still prevents adding a member to a different tenant.
 
 ---
 
@@ -178,7 +178,9 @@ Append-only. No capture bodies, no JWKS material. **Do not store a plain hash of
 
 ### RBAC HTTP (P1.3)
 
-Role on the **member row** is authoritative. A JWT `role=admin` claim is not. Viewer cannot mutate. `accepted-risk` requires lead+. Server may refuse to persist loot/replay; it does not control in-browser copy.
+Role on the **member row** is authoritative. A JWT `role=admin` claim is not. Viewer cannot mutate. `accepted-risk` requires lead+. Admin+ may add/change/remove members; `owner` is bootstrap-only; the last owner cannot be removed or demoted. Members HTTP is session-bound (`GET/POST/PATCH/DELETE /api/team/members`). Server may refuse to persist loot/replay; it does not control in-browser copy.
+
+Collab HTTP (policy/review/ReportDTO over HTTP) remains P1.5; the kernel already applies RBAC on `updateWorkspaceCollab`.
 
 ### Postgres RLS
 
@@ -211,4 +213,14 @@ P1.1 out of scope (now P1.2 or later): OIDC routes, session cookies, RBAC middle
 - Opaque tenant-bound sessions + `__Host-claimforge-team.session`
 - P1.2 gates in `p1-gates.ts` and adversarial tests
 
-Out of scope: P1.3 RBAC HTTP, P1.5 collab HTTP, P1.6 UI, tenant listing, IdP logout, OIDC discovery, JIT provisioning.
+Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI, tenant listing, IdP logout, OIDC discovery, JIT provisioning.
+
+## 11. P1.3 deliverable
+
+- ADR-036
+- Live `team_member.role` capability checks in the kernel (`rbac.ts`)
+- `GET/POST/PATCH/DELETE /api/team/members` (session-bound; no tenant_id; no JWT role)
+- Viewer read-only; `accepted-risk` lead+; admin+ member management; last owner protected
+- P1.3 gates in `p1-gates.ts` and `p1-3-rbac.test.ts` / `p1-3-http.test.ts`
+
+Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI.

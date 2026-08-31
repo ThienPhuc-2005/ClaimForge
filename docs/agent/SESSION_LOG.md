@@ -1,4 +1,10 @@
+## 2026-09-01 — P1.2 merged; P1.3 RBAC HTTP started
+
+- Squash-merged PR #2 into `main` as `6de17a4` after A1 20/20 and A2 26/26 (Chromium + Firefox cookie jars, PostgreSQL `token_hash` only, membership CASCADE).
+- Started `feat/p1.3-rbac-http`: live member-row RBAC, members HTTP, ADR-036. Draft only. Do not merge P1.3 from this session.
+
 ## 2026-08-31 — P1.2-R3-R1 operator CLI completion semantics
+
 
 - `close()` after a committed bootstrap no longer flips the process to failure or mixes JSON + stderr. Failed bootstrap + failed close keeps the original safe error.
 - Entry uses `process.exitCode` instead of `process.exit(code)` so stdio can flush.

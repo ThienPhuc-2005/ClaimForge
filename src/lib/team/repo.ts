@@ -8,13 +8,19 @@ import {
   type BoundIdentity,
   type TenantContext,
 } from "./context.ts";
-import { TeamIsolationError, TeamNotFoundError, TeamValidationError } from "./errors.ts";
+import { TeamForbiddenError, TeamIsolationError, TeamNotFoundError, TeamValidationError } from "./errors.ts";
 import {
   assertAllowedCollab,
   parseStoredPolicy,
   parseStoredReportDto,
   parseStoredReview,
 } from "./persist-guard.ts";
+import {
+  assertCanAssignRole,
+  assertCanManageTarget,
+  assertCapability,
+  reviewIncludesAcceptedRisk,
+} from "./rbac.ts";
 import type {
   CollabWrite,
   TeamCollab,
@@ -119,6 +125,14 @@ async function loadMember(sql: TeamSql, tenantId: string, userKey: string): Prom
   return rows[0] ? mapMember(rows[0]) : null;
 }
 
+async function countOwners(sql: TeamSql, tenantId: string): Promise<number> {
+  const rows = await sql.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM team_member WHERE tenant_id = $1 AND role = 'owner'",
+    [tenantId],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 export async function getTenant(sql: TeamSql, ctx: TenantContext): Promise<TeamTenant> {
   const ident = await requireActiveMember(sql, ctx);
   const rows = await sql.query<TenantRow>(
@@ -144,9 +158,11 @@ export async function addMember(
   input: { userKey: string; role: TeamRole },
 ): Promise<TeamMember> {
   const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "manageMembers");
   rejectCallerTenantId(input);
   const userKey = requireUserKey(input.userKey);
   const role = requireRole(input.role);
+  assertCanAssignRole(ident.role, role);
   try {
     await sql.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
       ident.tenantId,
@@ -163,12 +179,57 @@ export async function addMember(
   return member;
 }
 
+export async function updateMemberRole(
+  sql: TeamSql,
+  ctx: TenantContext,
+  input: { userKey: string; role: TeamRole },
+): Promise<TeamMember> {
+  const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "manageMembers");
+  rejectCallerTenantId(input);
+  const userKey = requireUserKey(input.userKey);
+  const role = requireRole(input.role);
+  assertCanAssignRole(ident.role, role);
+  const existing = await loadMember(sql, ident.tenantId, userKey);
+  if (!existing) throw new TeamNotFoundError("not found");
+  assertCanManageTarget(ident.role, existing.role);
+  if (existing.role === "owner" && (await countOwners(sql, ident.tenantId)) <= 1) {
+    throw new TeamForbiddenError("forbidden");
+  }
+  await sql.query("UPDATE team_member SET role = $3 WHERE tenant_id = $1 AND user_key = $2", [
+    ident.tenantId,
+    userKey,
+    role,
+  ]);
+  const member = await loadMember(sql, ident.tenantId, userKey);
+  if (!member) throw new TeamNotFoundError("not found");
+  return member;
+}
+
+export async function removeMember(sql: TeamSql, ctx: TenantContext, userKeyRaw: string): Promise<void> {
+  const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "manageMembers");
+  const userKey = requireUserKey(userKeyRaw);
+  const existing = await loadMember(sql, ident.tenantId, userKey);
+  if (!existing) throw new TeamNotFoundError("not found");
+  assertCanManageTarget(ident.role, existing.role);
+  if (existing.role === "owner" && (await countOwners(sql, ident.tenantId)) <= 1) {
+    throw new TeamForbiddenError("forbidden");
+  }
+  const rows = await sql.query<{ user_key: string }>(
+    "DELETE FROM team_member WHERE tenant_id = $1 AND user_key = $2 RETURNING user_key",
+    [ident.tenantId, userKey],
+  );
+  if (!rows[0]) throw new TeamNotFoundError("not found");
+}
+
 export async function createWorkspace(
   sql: TeamSql,
   ctx: TenantContext,
   input: { name: string },
 ): Promise<TeamWorkspace> {
   const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "mutateWorkspace");
   rejectCallerTenantId(input);
   const name = requireName(input.name);
   const id = randomUUID();
@@ -210,6 +271,7 @@ export async function listWorkspaces(sql: TeamSql, ctx: TenantContext): Promise<
 
 export async function deleteWorkspace(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<void> {
   const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "mutateWorkspace");
   const rows = await sql.query<{ id: string }>(
     "DELETE FROM team_workspace WHERE tenant_id = $1 AND id = $2 RETURNING id",
     [ident.tenantId, workspaceId],
@@ -234,8 +296,12 @@ export async function updateWorkspaceCollab(
   write: CollabWrite,
 ): Promise<TeamCollab> {
   const ident = await requireActiveMember(sql, ctx);
+  assertCapability(ident.role, "mutateWorkspace");
   rejectCallerTenantId(write);
   const safe = assertAllowedCollab(write);
+  if (reviewIncludesAcceptedRisk(safe.review ?? undefined)) {
+    assertCapability(ident.role, "acceptRisk");
+  }
   await loadWorkspace(sql, ident, workspaceId);
   const touchPolicy = safe.policy !== undefined;
   const touchReview = safe.review !== undefined;

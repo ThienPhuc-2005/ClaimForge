@@ -1,7 +1,7 @@
 /**
  * P1 catalog: each isolation / OIDC invariant has a test that would fail if the fix is reverted.
  */
-export const P1_ITEMS = ["P1.1", "P1.2"] as const;
+export const P1_ITEMS = ["P1.1", "P1.2", "P1.3"] as const;
 export type P1Item = (typeof P1_ITEMS)[number];
 
 export interface P1Gate {
@@ -541,6 +541,54 @@ export const P1_GATES: P1Gate[] = [
     before: "finally { await handle.close() } masked success JSON or the original bootstrap error",
     after: "Committed bootstrap stays exit 0 with JSON only; failed bootstrap keeps the original safe error; close errors are swallowed and never leak env",
     evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI close() after commit still succeeds and does not leak secrets",
+  },
+  {
+    id: "P1.3-viewer-no-mutate",
+    p1: "P1.3",
+    bug: "Any active member could create workspaces or add members",
+    before: "requireActiveMember was the only gate on addMember/createWorkspace",
+    after: "Viewer is read-only; mutateWorkspace is analyst+",
+    evidenceTest: "p1-3-rbac.test.ts:viewer cannot mutate workspace, policy, or membership",
+  },
+  {
+    id: "P1.3-accepted-risk-lead",
+    p1: "P1.3",
+    bug: "Analyst could persist accepted-risk on a Team review map",
+    before: "updateWorkspaceCollab wrote any valid ReviewState",
+    after: "accepted-risk requires live lead+ role from team_member",
+    evidenceTest: "p1-3-rbac.test.ts:accepted-risk requires lead or above",
+  },
+  {
+    id: "P1.3-live-role-not-context",
+    p1: "P1.3",
+    bug: "RBAC trusted ctx.role from the minted snapshot / JWT claim",
+    before: "Frozen context.role or ID token role=admin authorized writes",
+    after: "requireActiveMember re-SELECT; demoted row is forbidden",
+    evidenceTest: "p1-3-rbac.test.ts:live member row role is authoritative, not the minted context snapshot",
+  },
+  {
+    id: "P1.3-admin-cannot-owner",
+    p1: "P1.3",
+    bug: "Admin could insert a second owner or remove a peer admin",
+    before: "addMember accepted any TeamRole from any member",
+    after: "Cannot assign owner; admin manages strictly lower ranks",
+    evidenceTest: "p1-3-rbac.test.ts:admin cannot assign owner or manage equal/higher ranks",
+  },
+  {
+    id: "P1.3-last-owner",
+    p1: "P1.3",
+    bug: "Owner could delete or demote the last owner row",
+    before: "DELETE FROM team_member had no last-owner check",
+    after: "Removing or demoting the last owner is forbidden",
+    evidenceTest: "p1-3-rbac.test.ts:cannot remove or demote the last owner",
+  },
+  {
+    id: "P1.3-http-viewer-403",
+    p1: "P1.3",
+    bug: "POST /api/team/members ignored role and inserted for any session",
+    before: "No members HTTP; kernel addMember had no privilege check",
+    after: "Viewer session is 403; body tenant_id rejected; no JWT role",
+    evidenceTest: "p1-3-http.test.ts:viewer POST /api/team/members is 403",
   },
 ];
 
