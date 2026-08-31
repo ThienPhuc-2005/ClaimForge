@@ -53,7 +53,7 @@ Fixed mode signs HS256 with a **server-only** HMAC key (never shipped to the cli
 
 ## Team mode (P1 — isolation kernel)
 
-Team is **opt-in and self-hosted**. It is not on unless an operator bootstraps a tenant. Captures still parse and score in the browser. P1 does **not** upload HAR/HTTP/JWT/cookies.
+Team is **opt-in and self-hosted**. It is not on unless an operator bootstraps a tenant via `npm run team:bootstrap` (env secret + `DATABASE_URL`; no public HTTP, no PGLite fallback). Captures still parse and score in the browser. P1 does **not** upload HAR/HTTP/JWT/cookies.
 
 When Team collab is used, the server may store policy JSON, review-state maps, and a deep-redacted ReportDTO, each row carrying `tenant_id` from a **verified membership context** — never from client-supplied tenant fields.
 
@@ -64,6 +64,32 @@ Isolation is application-level (`TenantContext` + `WHERE tenant_id = $ctx`) plus
 In-browser loot/replay export is a local action; the Team server cannot honestly prevent it.
 
 See [P1_TEAM_ISOLATION.md](./P1_TEAM_ISOLATION.md).
+
+## Team mode (P1.2 — customer OIDC + opaque sessions)
+
+Team identity is the operator's IdP, not Grok Better Auth. One confidential client per ClaimForge instance, configured by env. Authorization Code + PKCE S256. Static endpoints; no OIDC discovery.
+
+An attacker must not:
+
+- Turn an unverified JWT (`alg=none`, HS*, wrong iss/aud/nonce/exp) into a `TenantContext`.
+- Supply `tenant_id` or `role` in the ID token to switch tenant or escalate.
+- JIT-create a `team_member` by presenting a new `sub`.
+- Create the first tenant/owner through HTTP, or bootstrap into preview PGLite without `DATABASE_URL`.
+- Read a bootstrap secret, client secret, token, or raw OIDC `sub` from CLI output.
+- Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use; consume deletes the row).
+- Grow `team_oidc_pending` without bound by spamming login with random slugs (expired rows are swept; table is capped by evicting oldest; not a slug oracle).
+- Read a raw session token or ID/access/refresh token from the database.
+- Use a session after the member row is deleted.
+- Start Team OIDC on HTTP (or spoof HTTPS via `X-Forwarded-Proto` without a trusted-proxy flag) or without a syntactically valid tenant slug.
+- Learn whether a tenant slug exists from login status (valid slugs all 302; existence is fail-closed at callback).
+- Point token/JWKS fetch at an unallowlisted or private host (SSRF), or force the RP to buffer an oversized JWKS/token body.
+- CSRF-logout a session from another origin.
+
+`CLAIMFORGE_TEAM_TRUST_PROXY` is only safe when a trusted reverse proxy strips or overwrites client-supplied `X-Forwarded-Proto`. Otherwise a caller can spoof HTTPS and receive a `__Host-` cookie on a cleartext request.
+
+The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque token in transit; only its SHA-256 is stored. Logout revokes that local session only — it does not call the IdP. DNS rebinding remains a known P0.6 residual (fetch cannot pin resolved IPs).
+
+P1.2 does not list tenants, enforce RBAC (P1.3), or persist collab over HTTP (P1.5).
 
 ## Limitations
 

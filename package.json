@@ -21,7 +21,8 @@
     "test:e2e": "node scripts/e2e-desk.mjs",
     "audit:deps": "npm audit --audit-level=high",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "team:bootstrap": "node --experimental-strip-types scripts/team-bootstrap.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",

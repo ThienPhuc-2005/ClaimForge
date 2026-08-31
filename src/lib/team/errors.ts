@@ -50,3 +50,11 @@ export class TeamValidationError extends TeamError {
     this.name = "TeamValidationError";
   }
 }
+
+/** OIDC / session failures. Message is safe to return; never includes secrets. */
+export class TeamAuthError extends TeamError {
+  constructor(message = "oidc is not configured") {
+    super("auth", message);
+    this.name = "TeamAuthError";
+  }
+}

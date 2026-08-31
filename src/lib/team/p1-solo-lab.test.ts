@@ -42,6 +42,7 @@ test("auth schema stays out of the product glob", () => {
   const entries = readdirSync(join(root, "migrations"));
   assert.equal(entries.includes("0001_auth.sql"), false);
   assert.ok(entries.includes("0003_team_isolation.sql"));
+  assert.ok(entries.includes("0004_team_oidc_sessions.sql"));
   assert.ok(readdirSync(join(root, "migrations/auth")).includes("0001_auth.sql"));
 });
 

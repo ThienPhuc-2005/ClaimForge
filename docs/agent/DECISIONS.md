@@ -109,7 +109,7 @@ Team tables live in `migrations/0003_team_isolation.sql`. `migrations/auth/` sta
 
 ## ADR-026 — First tenant and first owner are an operator bootstrap
 
-`unlockBootstrap` + `bootstrapTenant` in one transaction. No public endpoint may self-assign `owner`. Empty configured secret disables bootstrap.
+`unlockBootstrap` + `bootstrapTenant` in one transaction. No public endpoint may self-assign `owner`. Empty configured secret disables bootstrap. P1.2 ships the operator CLI in ADR-035.
 
 ## ADR-027 — Server authorization cannot claim to control in-browser export
 
@@ -138,3 +138,35 @@ P1.1 persist is not a key-name heuristic and is not “regex means no credential
 ## ADR-033 — TenantContext identity is WeakMap + freeze + live membership
 
 Brand symbols are defense-in-depth. Authority is `WeakMap` object identity: mint after SQL, freeze context and snapshot, re-SELECT membership on every public repo call. A deleted member cannot keep using a previously minted context. Bootstrap actors use the same registry pattern.
+
+## ADR-034 — P1.2 is instance-wide OIDC with opaque tenant-bound sessions
+
+Locked for the P1.2 epic:
+
+- One IdP per ClaimForge instance, env-configured (`CLAIMFORGE_TEAM_OIDC_*`). Confidential client; `client_secret` and `CLAIMFORGE_TEAM_SEAL_KEY` never enter Postgres, logs, or JSON serialization (WeakMap).
+- Authorization Code + PKCE S256. Static authorization/token/JWKS endpoints (no discovery). Closed hostname allowlist is mandatory. Fail-closed if issuer, endpoints, allowlist, secret, or seal key is missing.
+- JWKS: reuse P0.6 SSRF gate (`teamMode`, `credentials:omit`, `redirect:manual`). `createLocalJWKSet` only — never `createRemoteJWKSet`. Cache with TTL; unknown `kid` refetches at most once.
+- ID token: RS256/PS256/ES256; reject `none` and HS*; verify sig/iss/aud/azp/exp/iat/nonce. `iat` may be at most 30s in the future and at most 5 minutes old (code-exchange freshness). `sub` is the exact OIDC subject (no trim).
+- `user_key = "oidc:" + sha256(JSON.stringify([iss, sub]))`. Login requires a syntactically valid `?slug=`; it does not probe tenant existence (no 302/404 oracle). Tenant/membership fail-closed at callback. No JIT `team_member`. JWT `tenant_id`/`role` are not trusted.
+- Sessions: CSPRNG 32-byte token, SHA-256 in `team_session`, `tenant_id NOT NULL`, FK to `team_member ON DELETE CASCADE`. TTL 12h from `created_at`; atomic rotate after 6h with 60s previous-token grace so concurrent requests are not logged out. Cookie `__Host-claimforge-team.session` Secure+HttpOnly+Path=/+SameSite=Strict, no Domain. HTTPS is the request URL protocol; `X-Forwarded-Proto` is ignored unless `CLAIMFORGE_TEAM_TRUST_PROXY` is set. That flag is only safe when a trusted reverse proxy strips or overwrites client-supplied `X-Forwarded-Proto`.
+- `code_verifier` is AES-256-GCM sealed with a key derived from `CLAIMFORGE_TEAM_SEAL_KEY`. State stored as hash. Consume is `DELETE ... RETURNING`. Expired pending rows are swept. In-flight pending is capped at 256 (oldest evicted) so login spam cannot grow the table; valid slugs still all 302.
+- Token POST and JWKS GET bodies are read from the stream and aborted at the size cap (`readCappedBody`). Token audit action is `token-exchange`.
+- Auth HTTP responses set `Cache-Control: no-store` (and `Pragma: no-cache`); callback sets `Referrer-Policy: no-referrer`.
+- Neon `TeamSql.transaction` checks out **one** connection for BEGIN/queries/COMMIT (SAVEPOINTs for nesting). No pooled BEGIN/COMMIT.
+- Logout is local revoke only. No tenant list in P1.2. Not Grok Better Auth.
+
+Supersedes the “future” wording in ADR-024 for the P1.2 slice; P1.1 still has no session table of its own.
+
+## ADR-035 — First OIDC tenant is bootstrapped by an operator CLI
+
+P1.2-R3:
+
+- No HTTP bootstrap route. Operators run `npm run team:bootstrap`.
+- `DATABASE_URL` is required. The CLI must not fall back to the preview PGLite database.
+- `CLAIMFORGE_TEAM_BOOTSTRAP_SECRET` is read from the environment only (length ≥ 16). `--secret` / token-like flags are rejected.
+- CLI flags are `--slug`, `--name`, `--issuer`, `--sub`. `user_key = oidcUserKey(issuer, sub)` (exact `sub`, no trim).
+- The process calls `unlockBootstrap` + `bootstrapTenant` inside the existing TeamSql transaction helper (`wrapPgPool` on a checked-out Postgres connection).
+- Stdout is JSON `{tenantId, slug, userKey}` only. Stderr messages are generic Team errors. Never log the bootstrap secret, client secret, tokens, or raw `sub`.
+- Fail-closed on missing input/env, missing `team_tenant`/`team_member`, or duplicate slug.
+- Procedure: `docs/operator/BOOTSTRAP.md`. Still no JIT, no Better Auth, no P1.3.
+

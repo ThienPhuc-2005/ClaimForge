@@ -11,7 +11,7 @@ export interface JwksFetchNotice {
 }
 
 export interface JwksAudit {
-  action: "jwks-fetch";
+  action: "jwks-fetch" | "token-exchange";
   hostname: string;
   result: "ok" | "denied" | "error";
   status?: number;
@@ -161,6 +161,58 @@ function contentTypeOk(ct: string | null): boolean {
   );
 }
 
+export class CappedBodyError extends Error {
+  readonly maxBytes: number;
+  constructor(maxBytes: number) {
+    super(`response exceeds ${maxBytes} bytes`);
+    this.name = "CappedBodyError";
+    this.maxBytes = maxBytes;
+  }
+}
+
+/**
+ * Read a response body from the stream and abort as soon as it exceeds `maxBytes`.
+ * A declared Content-Length over the cap cancels without pulling the body.
+ */
+export async function readCappedBody(res: Response, maxBytes: number): Promise<Uint8Array> {
+  const declared = res.headers.get("content-length");
+  if (declared) {
+    const n = Number(declared);
+    if (Number.isFinite(n) && n > maxBytes) {
+      if (res.body) await res.body.cancel().catch(() => undefined);
+      throw new CappedBodyError(maxBytes);
+    }
+  }
+  if (!res.body) {
+    return new Uint8Array(0);
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new CappedBodyError(maxBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 export async function fetchJwksDocument(
   rawUrl: string,
   opts: {
@@ -238,9 +290,14 @@ export async function fetchJwksDocument(
       if (!contentTypeOk(res.headers.get("content-type"))) {
         throw new Error(`JWKS content-type not JSON (${res.headers.get("content-type") ?? "missing"})`);
       }
-      const buf = new Uint8Array(await res.arrayBuffer());
-      if (buf.byteLength > maxBytes) {
-        throw new Error(`JWKS response exceeds ${maxBytes} bytes`);
+      let buf: Uint8Array;
+      try {
+        buf = await readCappedBody(res, maxBytes);
+      } catch (err) {
+        if (err instanceof CappedBodyError) {
+          throw new Error(`JWKS response exceeds ${maxBytes} bytes`);
+        }
+        throw err;
       }
       const text = new TextDecoder().decode(buf);
       const parsed = JSON.parse(text) as { keys?: unknown };

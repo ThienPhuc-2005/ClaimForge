@@ -1,3 +1,38 @@
+## 2026-08-31 — P1.2-R3-R1 operator CLI completion semantics
+
+- `close()` after a committed bootstrap no longer flips the process to failure or mixes JSON + stderr. Failed bootstrap + failed close keeps the original safe error.
+- Entry uses `process.exitCode` instead of `process.exit(code)` so stdio can flush.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
+## 2026-08-31 — P1.2-R3 operator bootstrap CLI
+
+- Operator-only `npm run team:bootstrap`: `--slug --name --issuer --sub`. Secret from `CLAIMFORGE_TEAM_BOOTSTRAP_SECRET`. Requires `DATABASE_URL` (no PGLite fallback, no HTTP).
+- `oidcUserKey` + `unlockBootstrap` + `bootstrapTenant` on wrapPgPool. Stdout is tenant id, slug, derived user_key. Fail-closed on missing env, unmigrated schema, duplicate slug.
+- Docs: `docs/operator/BOOTSTRAP.md`, ADR-035. Draft PR #2 kept. Did not merge. Did not start P1.3.
+
+## 2026-08-30 — P1.2-R2 pending bound + stream-capped JWKS
+
+- Consume pending with `DELETE ... RETURNING`; sweep expired; cap 256 by evicting oldest. Login spam is not a slug oracle. Replay still 401.
+- Shared `readCappedBody` stream-caps JWKS GET and token POST (cancel at size cap; no `arrayBuffer` then check).
+- `CLAIMFORGE_TEAM_TRUST_PROXY` is only safe when a trusted reverse proxy strips or overwrites client `X-Forwarded-Proto`.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
+## 2026-08-30 — P1.2-R1 review blockers
+
+- Stream-capped token POST body (no `arrayBuffer` then size check). Audit action `token-exchange`.
+- `X-Forwarded-Proto` ignored unless `CLAIMFORGE_TEAM_TRUST_PROXY`. Login slug is not a tenant-existence oracle.
+- Exact OIDC `sub` (no trim). ID token `iat` future/stale window. `Cache-Control: no-store` on auth HTTP. Rotate previous-hash 60s grace.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
+## 2026-08-30 — P1.2 customer OIDC + opaque sessions
+
+- Branch `feat/p1.2-oidc-sessions` from `origin/main` `f1a0771`. Did not merge. Did not touch `0003` or the P1.1 kernel.
+- A: `0004_team_oidc_sessions.sql` + TeamSql Neon one-connection transactions.
+- B: env OIDC loader (WeakMap secrets), PKCE S256, AES-GCM seal, outbound SSRF gate, local JWKS, ID token verify.
+- C: hashed pending, tenant-bound opaque sessions, `__Host-` cookie, login/callback/logout/session routes. No JIT.
+- D: P1.2 gates + adversarial tests (claims ignored, slug bind, replay, CSRF logout, no createRemoteJWKSet, 0003 untouched) and docs (ADR-034, threat model, HANDOFF/BACKLOG).
+- Next: P1.3 only if asked. Draft PR, do not merge.
+
 ## 2026-08-30 — P1.1 merged to main
 
 - Squash-merged PR #1 at HEAD `ed7f913` → `main` `fa21439` (`feat(p1): add tenant isolation kernel`).

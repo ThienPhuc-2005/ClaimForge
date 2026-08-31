@@ -20,7 +20,7 @@
 | P0.8 | Adversarial gate per P0 bug | done | Catalog includes remainder rows (invalid regex, role scoring, allowlist, PDF pages) |
 | P1.0 | Team isolation architecture | done | `docs/P1_TEAM_ISOLATION.md`, ADR-017–031 |
 | P1.1 | Tenant isolation kernel | done | `migrations/0003_team_isolation.sql`, `src/lib/team/*`. Frozen WeakMap `TenantContext`; `requireActiveMember`; Team ReportDTO projection. Adversarial tests + `p1-gates.ts`. No HTTP. |
-| P1.2 | Customer OIDC + opaque sessions | not_started | After P1.1. Not Grok Better Auth. Secrets not plaintext in DB. |
+| P1.2 | Customer OIDC + opaque sessions | done | `migrations/0004_team_oidc_sessions.sql`, `src/lib/team/oidc-*.ts`, `session.ts`, `/api/team/oidc/*`, `/api/team/session`. Env IdP, PKCE S256, hashed+sealed pending, tenant-bound opaque sessions, no JIT. Operator CLI `npm run team:bootstrap`. ADR-034/035. Not Grok Better Auth. |
 | P1.3 | RBAC on Team APIs | not_started | After OIDC. Server cannot claim in-browser export control. |
 | P1.4 | Append-only audit | not_started | No unsalted IP hash; HMAC with rotation or omit. |
 | P1.5 | Collab HTTP for policy/review/ReportDTO | not_started | Persist allowlist is already a kernel invariant. |

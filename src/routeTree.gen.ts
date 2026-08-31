@@ -11,6 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiLabSplatRouteImport } from './routes/api/lab/$'
+import { Route as ApiTeamSessionRouteImport } from './routes/api/team/session'
+import { Route as ApiTeamOidcCallbackRouteImport } from './routes/api/team/oidc/callback'
+import { Route as ApiTeamOidcLoginRouteImport } from './routes/api/team/oidc/login'
+import { Route as ApiTeamOidcLogoutRouteImport } from './routes/api/team/oidc/logout'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +26,86 @@ const ApiLabSplatRoute = ApiLabSplatRouteImport.update({
   path: '/api/lab/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTeamSessionRoute = ApiTeamSessionRouteImport.update({
+  id: '/api/team/session',
+  path: '/api/team/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamOidcCallbackRoute = ApiTeamOidcCallbackRouteImport.update({
+  id: '/api/team/oidc/callback',
+  path: '/api/team/oidc/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamOidcLoginRoute = ApiTeamOidcLoginRouteImport.update({
+  id: '/api/team/oidc/login',
+  path: '/api/team/oidc/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamOidcLogoutRoute = ApiTeamOidcLogoutRouteImport.update({
+  id: '/api/team/oidc/logout',
+  path: '/api/team/oidc/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/session': typeof ApiTeamSessionRoute
+  '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
+  '/api/team/oidc/login': typeof ApiTeamOidcLoginRoute
+  '/api/team/oidc/logout': typeof ApiTeamOidcLogoutRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/session': typeof ApiTeamSessionRoute
+  '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
+  '/api/team/oidc/login': typeof ApiTeamOidcLoginRoute
+  '/api/team/oidc/logout': typeof ApiTeamOidcLogoutRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/session': typeof ApiTeamSessionRoute
+  '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
+  '/api/team/oidc/login': typeof ApiTeamOidcLoginRoute
+  '/api/team/oidc/logout': typeof ApiTeamOidcLogoutRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/lab/$'
+  fullPaths:
+    | '/'
+    | '/api/lab/$'
+    | '/api/team/session'
+    | '/api/team/oidc/callback'
+    | '/api/team/oidc/login'
+    | '/api/team/oidc/logout'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/lab/$'
-  id: '__root__' | '/' | '/api/lab/$'
+  to:
+    | '/'
+    | '/api/lab/$'
+    | '/api/team/session'
+    | '/api/team/oidc/callback'
+    | '/api/team/oidc/login'
+    | '/api/team/oidc/logout'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/lab/$'
+    | '/api/team/session'
+    | '/api/team/oidc/callback'
+    | '/api/team/oidc/login'
+    | '/api/team/oidc/logout'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiLabSplatRoute: typeof ApiLabSplatRoute
+  ApiTeamSessionRoute: typeof ApiTeamSessionRoute
+  ApiTeamOidcCallbackRoute: typeof ApiTeamOidcCallbackRoute
+  ApiTeamOidcLoginRoute: typeof ApiTeamOidcLoginRoute
+  ApiTeamOidcLogoutRoute: typeof ApiTeamOidcLogoutRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +124,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLabSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/team/session': {
+      id: '/api/team/session'
+      path: '/api/team/session'
+      fullPath: '/api/team/session'
+      preLoaderRoute: typeof ApiTeamSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/oidc/callback': {
+      id: '/api/team/oidc/callback'
+      path: '/api/team/oidc/callback'
+      fullPath: '/api/team/oidc/callback'
+      preLoaderRoute: typeof ApiTeamOidcCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/oidc/login': {
+      id: '/api/team/oidc/login'
+      path: '/api/team/oidc/login'
+      fullPath: '/api/team/oidc/login'
+      preLoaderRoute: typeof ApiTeamOidcLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/oidc/logout': {
+      id: '/api/team/oidc/logout'
+      path: '/api/team/oidc/logout'
+      fullPath: '/api/team/oidc/logout'
+      preLoaderRoute: typeof ApiTeamOidcLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiLabSplatRoute: ApiLabSplatRoute,
+  ApiTeamSessionRoute: ApiTeamSessionRoute,
+  ApiTeamOidcCallbackRoute: ApiTeamOidcCallbackRoute,
+  ApiTeamOidcLoginRoute: ApiTeamOidcLoginRoute,
+  ApiTeamOidcLogoutRoute: ApiTeamOidcLogoutRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
