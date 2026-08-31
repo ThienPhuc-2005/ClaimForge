@@ -109,7 +109,7 @@ Team tables live in `migrations/0003_team_isolation.sql`. `migrations/auth/` sta
 
 ## ADR-026 — First tenant and first owner are an operator bootstrap
 
-`unlockBootstrap` + `bootstrapTenant` in one transaction. No public endpoint may self-assign `owner`. Empty configured secret disables bootstrap.
+`unlockBootstrap` + `bootstrapTenant` in one transaction. No public endpoint may self-assign `owner`. Empty configured secret disables bootstrap. P1.2 ships the operator CLI in ADR-035.
 
 ## ADR-027 — Server authorization cannot claim to control in-browser export
 
@@ -156,4 +156,17 @@ Locked for the P1.2 epic:
 - Logout is local revoke only. No tenant list in P1.2. Not Grok Better Auth.
 
 Supersedes the “future” wording in ADR-024 for the P1.2 slice; P1.1 still has no session table of its own.
+
+## ADR-035 — First OIDC tenant is bootstrapped by an operator CLI
+
+P1.2-R3:
+
+- No HTTP bootstrap route. Operators run `npm run team:bootstrap`.
+- `DATABASE_URL` is required. The CLI must not fall back to the preview PGLite database.
+- `CLAIMFORGE_TEAM_BOOTSTRAP_SECRET` is read from the environment only (length ≥ 16). `--secret` / token-like flags are rejected.
+- CLI flags are `--slug`, `--name`, `--issuer`, `--sub`. `user_key = oidcUserKey(issuer, sub)` (exact `sub`, no trim).
+- The process calls `unlockBootstrap` + `bootstrapTenant` inside the existing TeamSql transaction helper (`wrapPgPool` on a checked-out Postgres connection).
+- Stdout is JSON `{tenantId, slug, userKey}` only. Stderr messages are generic Team errors. Never log the bootstrap secret, client secret, tokens, or raw `sub`.
+- Fail-closed on missing input/env, missing `team_tenant`/`team_member`, or duplicate slug.
+- Procedure: `docs/operator/BOOTSTRAP.md`. Still no JIT, no Better Auth, no P1.3.
 

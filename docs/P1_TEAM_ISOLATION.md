@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is implemented on `feat/p1.2-oidc-sessions` (additive `0004`, env IdP, Authorization Code + PKCE, hashed sessions). P1.3+ (RBAC HTTP, audit, collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is implemented on `feat/p1.2-oidc-sessions` (additive `0004`, env IdP, Authorization Code + PKCE, hashed sessions, operator CLI bootstrap). P1.3+ (RBAC HTTP, audit, collab HTTP, UI) stay out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 
@@ -99,8 +99,10 @@ The same `user_key` **may** belong to multiple tenants (separate member rows). I
 
 Creating a tenant and assigning the first `owner` is an **operator procedure**, not a public API.
 
-- Requires `BootstrapActor` from `unlockBootstrap`. The configured secret is supplied by the operator environment (length ≥ 16). Comparison is timing-safe. Empty/missing configured secret means bootstrap is disabled.
-- There is no HTTP route in P1.1. P1.2+ must not add `POST /api/team/tenants` that lets a caller become `owner` without this unlock.
+- Requires `BootstrapActor` from `unlockBootstrap`. The configured secret is supplied by the operator environment (`CLAIMFORGE_TEAM_BOOTSTRAP_SECRET`, length ≥ 16). Comparison is timing-safe. Empty/missing configured secret means bootstrap is disabled.
+- There is no HTTP route. P1.2 ships `npm run team:bootstrap` (see [docs/operator/BOOTSTRAP.md](./operator/BOOTSTRAP.md)). It requires `DATABASE_URL` (no PGLite fallback), reads the bootstrap secret from the environment (never argv), derives `user_key` with `oidcUserKey(issuer, sub)`, and runs `unlockBootstrap` + `bootstrapTenant` in one TeamSql transaction. Do not add `POST /api/team/tenants` that lets a caller become `owner` without this unlock.
+- CLI stdout is tenant id, slug, and derived `user_key` only. It must not log the bootstrap secret, client secret, tokens, or raw `sub`.
+- Fail-closed if input/env is missing, `team_tenant` / `team_member` are not migrated, or the slug already exists.
 - Tenant insert + owner insert are one transaction. Failure rolls back both (no ownerless tenant, no member without tenant).
 - Subsequent members are added only through a verified `TenantContext` of **that** tenant. P1.1 does not yet enforce which roles may add members (RBAC is P1.3); isolation still prevents adding a member to a different tenant.
 
@@ -205,6 +207,7 @@ P1.1 out of scope (now P1.2 or later): OIDC routes, session cookies, RBAC middle
 - TeamSql transactions on one Neon connection (`wrapPgPool` / SAVEPOINT)
 - Env OIDC loader, PKCE S256, sealed `code_verifier`, outbound SSRF gate, local JWKS verify
 - Routes: `GET /api/team/oidc/login?slug=`, `GET /api/team/oidc/callback`, `POST /api/team/oidc/logout`, `GET /api/team/session`
+- Operator CLI `npm run team:bootstrap` (env secret, `DATABASE_URL`, no HTTP, no PGLite fallback)
 - Opaque tenant-bound sessions + `__Host-claimforge-team.session`
 - P1.2 gates in `p1-gates.ts` and adversarial tests
 

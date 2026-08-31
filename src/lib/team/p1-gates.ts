@@ -510,6 +510,30 @@ export const P1_GATES: P1Gate[] = [
     after: "Shared readCappedBody stream-reads and cancels as soon as JWKS_MAX_BYTES is exceeded",
     evidenceTest: "p1-2-crypto.test.ts:JWKS fetch stops reading when the body exceeds the size cap",
   },
+  {
+    id: "P1.2-operator-cli-no-http",
+    p1: "P1.2",
+    bug: "First tenant/owner was created through a public HTTP route or PGLite fallback",
+    before: "POST /api/team/tenants or getTeamSql() preview DB",
+    after: "Operator CLI requires DATABASE_URL; secret from env not argv; no tenants HTTP",
+    evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI refuses HTTP, PGLite, and argv secrets",
+  },
+  {
+    id: "P1.2-operator-cli-output",
+    p1: "P1.2",
+    bug: "Bootstrap CLI printed raw sub, bootstrap secret, or extra tenant fields",
+    before: "Logs included CLAIMFORGE_TEAM_BOOTSTRAP_SECRET or OIDC sub",
+    after: "Stdout is JSON tenantId, slug, and derived user_key only",
+    evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI prints only tenant id, slug, and user_key",
+  },
+  {
+    id: "P1.2-operator-cli-fail-closed",
+    p1: "P1.2",
+    bug: "Missing env, unmigrated schema, or duplicate slug still inserted a tenant",
+    before: "Partial argv or empty PGLite created an ownerless or duplicate row",
+    after: "Fail-closed; unique slug is tenant already exists; stderr has no secrets",
+    evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI fail-closes on missing env, unmigrated schema, and duplicate slug",
+  },
 ];
 
 export function gatesFor(p1: P1Item): P1Gate[] {

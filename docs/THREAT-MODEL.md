@@ -53,7 +53,7 @@ Fixed mode signs HS256 with a **server-only** HMAC key (never shipped to the cli
 
 ## Team mode (P1 — isolation kernel)
 
-Team is **opt-in and self-hosted**. It is not on unless an operator bootstraps a tenant. Captures still parse and score in the browser. P1 does **not** upload HAR/HTTP/JWT/cookies.
+Team is **opt-in and self-hosted**. It is not on unless an operator bootstraps a tenant via `npm run team:bootstrap` (env secret + `DATABASE_URL`; no public HTTP, no PGLite fallback). Captures still parse and score in the browser. P1 does **not** upload HAR/HTTP/JWT/cookies.
 
 When Team collab is used, the server may store policy JSON, review-state maps, and a deep-redacted ReportDTO, each row carrying `tenant_id` from a **verified membership context** — never from client-supplied tenant fields.
 
@@ -74,6 +74,8 @@ An attacker must not:
 - Turn an unverified JWT (`alg=none`, HS*, wrong iss/aud/nonce/exp) into a `TenantContext`.
 - Supply `tenant_id` or `role` in the ID token to switch tenant or escalate.
 - JIT-create a `team_member` by presenting a new `sub`.
+- Create the first tenant/owner through HTTP, or bootstrap into preview PGLite without `DATABASE_URL`.
+- Read a bootstrap secret, client secret, token, or raw OIDC `sub` from CLI output.
 - Steal a reusable authorization `code`/`state` (pending is hashed, sealed, single-use; consume deletes the row).
 - Grow `team_oidc_pending` without bound by spamming login with random slugs (expired rows are swept; table is capped by evicting oldest; not a slug oracle).
 - Read a raw session token or ID/access/refresh token from the database.

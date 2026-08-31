@@ -47,6 +47,10 @@ npm run build
 
 Heuristics are capture-side. Replay curls are for an authorized lab proxy.
 
+## Team (self-hosted, opt-in)
+
+Solo stays the default. Team identity is customer OIDC, not Grok Better Auth. The first tenant and owner are created with an operator CLI (`npm run team:bootstrap`) — not an HTTP endpoint. Procedure: [docs/operator/BOOTSTRAP.md](docs/operator/BOOTSTRAP.md). Architecture: [docs/P1_TEAM_ISOLATION.md](docs/P1_TEAM_ISOLATION.md).
+
 ## Victim lab
 
 Same-origin API with **Vulnerable** and **Fixed** implementations (separate capture buckets). Fixed signs HS256 with a server-only key, binds role to the account record, and revokes JWT `jti` on logout. Vulnerable still accepts alg=none and does not revoke.

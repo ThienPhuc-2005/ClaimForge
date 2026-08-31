@@ -1,3 +1,9 @@
+## 2026-08-31 — P1.2-R3 operator bootstrap CLI
+
+- Operator-only `npm run team:bootstrap`: `--slug --name --issuer --sub`. Secret from `CLAIMFORGE_TEAM_BOOTSTRAP_SECRET`. Requires `DATABASE_URL` (no PGLite fallback, no HTTP).
+- `oidcUserKey` + `unlockBootstrap` + `bootstrapTenant` on wrapPgPool. Stdout is tenant id, slug, derived user_key. Fail-closed on missing env, unmigrated schema, duplicate slug.
+- Docs: `docs/operator/BOOTSTRAP.md`, ADR-035. Draft PR #2 kept. Did not merge. Did not start P1.3.
+
 ## 2026-08-30 — P1.2-R2 pending bound + stream-capped JWKS
 
 - Consume pending with `DELETE ... RETURNING`; sweep expired; cap 256 by evicting oldest. Login spam is not a slug oracle. Replay still 401.
