@@ -1,3 +1,9 @@
+## 2026-08-31 — P1.2-R3-R1 operator CLI completion semantics
+
+- `close()` after a committed bootstrap no longer flips the process to failure or mixes JSON + stderr. Failed bootstrap + failed close keeps the original safe error.
+- Entry uses `process.exitCode` instead of `process.exit(code)` so stdio can flush.
+- Draft PR #2 kept. Did not merge. Did not start P1.3.
+
 ## 2026-08-31 — P1.2-R3 operator bootstrap CLI
 
 - Operator-only `npm run team:bootstrap`: `--slug --name --issuer --sub`. Secret from `CLAIMFORGE_TEAM_BOOTSTRAP_SECRET`. Requires `DATABASE_URL` (no PGLite fallback, no HTTP).

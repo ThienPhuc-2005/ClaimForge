@@ -87,6 +87,8 @@ test("operator bootstrap CLI refuses HTTP, PGLite, and argv secrets", () => {
     scripts: Record<string, string>;
   };
   assert.match(pkg.scripts["team:bootstrap"] ?? "", /team-bootstrap\.mjs/);
+  assert.doesNotMatch(entry, /process\.exit\s*\(/);
+  assert.match(entry, /process\.exitCode\s*=/);
 
   assert.throws(() => parseTeamBootstrapArgs([...ARGS, "--secret", SECRET]), TeamBootstrapError);
   assert.throws(
@@ -258,4 +260,65 @@ test("operator bootstrap CLI process fail-closes without DATABASE_URL and does n
   assert.equal(secretArg.status, 1);
   assert.match(secretArg.stderr, /bootstrap secret must come from the environment/);
   assertNoSecrets(`${secretArg.stdout}\n${secretArg.stderr}`);
+});
+
+function throwingClose(pg: PGlite, leak: Error) {
+  return async () => ({
+    sql: wrapPglite(pg as never),
+    close: async () => {
+      throw leak;
+    },
+  });
+}
+
+const CLOSE_LEAK = new Error(
+  `pool end failed DATABASE_URL=postgres://operator:${SECRET}@db/claimforge issuer=${ISS} sub=${SUB}`,
+);
+
+test("operator bootstrap CLI close() after commit still succeeds and does not leak secrets", async () => {
+  const { pg, sql } = await openMigrated();
+  const io = capture();
+  const code = await runTeamBootstrap(
+    ARGS,
+    { DATABASE_URL: "postgres://operator/claimforge", CLAIMFORGE_TEAM_BOOTSTRAP_SECRET: SECRET },
+    { openSql: throwingClose(pg, CLOSE_LEAK), log: io.log, error: io.error },
+  );
+  assert.equal(code, 0);
+  assert.equal(io.stderr.length, 0);
+  assert.equal(io.stdout.length, 1);
+  const parsed = JSON.parse(io.stdout[0]!) as { tenantId: string; slug: string; userKey: string };
+  assert.equal(parsed.slug, "acme");
+  assert.equal(parsed.userKey, expectedUserKey());
+  assertNoSecrets(io.text());
+  assert.equal(io.text().includes(ISS), false);
+  assert.equal(io.text().includes("postgres://"), false);
+  assert.equal(io.text().includes("pool end failed"), false);
+  const members = await sql.query<{ n: string }>("SELECT COUNT(*)::text AS n FROM team_member");
+  assert.equal(members[0]?.n, "1");
+});
+
+test("operator bootstrap CLI close() after bootstrap failure preserves the original safe error", async () => {
+  const { pg } = await openMigrated();
+  const first = capture();
+  assert.equal(
+    await runTeamBootstrap(
+      ARGS,
+      { DATABASE_URL: "postgres://operator/claimforge", CLAIMFORGE_TEAM_BOOTSTRAP_SECRET: SECRET },
+      { openSql: pgliteOpenSql(pg), ...first },
+    ),
+    0,
+  );
+  const io = capture();
+  const code = await runTeamBootstrap(
+    ["--slug", "acme", "--name", "Acme 2", "--issuer", ISS, "--sub", "other-sub"],
+    { DATABASE_URL: "postgres://operator/claimforge", CLAIMFORGE_TEAM_BOOTSTRAP_SECRET: SECRET },
+    { openSql: throwingClose(pg, CLOSE_LEAK), log: io.log, error: io.error },
+  );
+  assert.equal(code, 1);
+  assert.equal(io.stdout.length, 0);
+  assert.equal(io.stderr.join("\n"), "tenant already exists");
+  assert.equal(io.text().includes("other-sub"), false);
+  assert.equal(io.text().includes("pool end failed"), false);
+  assert.equal(io.text().includes("postgres://"), false);
+  assertNoSecrets(io.text());
 });

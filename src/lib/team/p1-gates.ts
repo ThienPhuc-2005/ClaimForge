@@ -534,6 +534,14 @@ export const P1_GATES: P1Gate[] = [
     after: "Fail-closed; unique slug is tenant already exists; stderr has no secrets",
     evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI fail-closes on missing env, unmigrated schema, and duplicate slug",
   },
+  {
+    id: "P1.2-operator-cli-close",
+    p1: "P1.2",
+    bug: "close() after committed bootstrap printed failure stderr or flipped exit to 1",
+    before: "finally { await handle.close() } masked success JSON or the original bootstrap error",
+    after: "Committed bootstrap stays exit 0 with JSON only; failed bootstrap keeps the original safe error; close errors are swallowed and never leak env",
+    evidenceTest: "p1-2-bootstrap.test.ts:operator bootstrap CLI close() after commit still succeeds and does not leak secrets",
+  },
 ];
 
 export function gatesFor(p1: P1Item): P1Gate[] {

@@ -174,6 +174,15 @@ export function safeBootstrapErrorMessage(err: unknown): string {
   return "bootstrap failed";
 }
 
+/** Pool teardown must not mask a committed bootstrap or a prior safe error. */
+async function settleClose(close: () => Promise<void>): Promise<void> {
+  try {
+    await close();
+  } catch {
+    /* ignore — close errors can include connection strings */
+  }
+}
+
 export async function runTeamBootstrap(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -198,10 +207,13 @@ export async function runTeamBootstrap(
     const handle = await openSql(databaseUrl);
     try {
       const out = await bootstrapOidcOwner(handle.sql, input, bootstrapSecret);
+      await settleClose(() => handle.close());
       log(formatBootstrapOutput(out));
       return 0;
-    } finally {
-      await handle.close();
+    } catch (err) {
+      await settleClose(() => handle.close());
+      error(safeBootstrapErrorMessage(err));
+      return 1;
     }
   } catch (err) {
     error(safeBootstrapErrorMessage(err));
