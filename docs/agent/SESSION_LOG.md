@@ -1,4 +1,11 @@
+## 2026-09-01 — P1.3 merged; A3 lab; handoff
+
+- Squash-merged PR #3 into `main` as `4cefe02`. CI run 34 green.
+- P1.3-A3 lab 36/36: Chromium + Firefox + real Postgres. Cookie not JWT; session omits role; viewer/analyst cannot escalate; admin cannot assign owner. No commit from the lab (local vite TLS patch restored).
+- Docs handoff for a new implementing session. P1.4 not started.
+
 ## 2026-09-01 — P1.3-R1 extra RBAC HTTP cases
+
 
 - Extra tests: analyst/lead cannot escalate via members HTTP; viewer GET 200; session JSON still omits role; Bearer JWT is 401; HTTP URL is 400; unknown delete 404; invalid role 400; viewer still reads workspace/collab.
 - CI run 32 on `3c8201b` was already green; this is additional coverage. Draft kept. Do not merge.

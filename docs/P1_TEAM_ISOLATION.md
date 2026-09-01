@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1 isolation kernel is on `main`. P1.2 customer OIDC + opaque tenant-bound sessions is on `main` (PR #2 squash `6de17a4`). P1.3 RBAC HTTP is implemented on `feat/p1.3-rbac-http`. P1.4+ (audit, collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4+ (audit, collab HTTP, UI) stay out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 

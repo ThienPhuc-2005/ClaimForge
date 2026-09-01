@@ -21,8 +21,8 @@
 | P1.0 | Team isolation architecture | done | `docs/P1_TEAM_ISOLATION.md`, ADR-017–031 |
 | P1.1 | Tenant isolation kernel | done | `migrations/0003_team_isolation.sql`, `src/lib/team/*`. Frozen WeakMap `TenantContext`; `requireActiveMember`; Team ReportDTO projection. Adversarial tests + `p1-gates.ts`. No HTTP. |
 | P1.2 | Customer OIDC + opaque sessions | done | `migrations/0004_team_oidc_sessions.sql`, `src/lib/team/oidc-*.ts`, `session.ts`, `/api/team/oidc/*`, `/api/team/session`. Env IdP, PKCE S256, hashed+sealed pending, tenant-bound opaque sessions, no JIT. Operator CLI `npm run team:bootstrap`. ADR-034/035. Not Grok Better Auth. Merged PR #2 squash `6de17a4`. |
-| P1.3 | RBAC on Team APIs | in_progress | Live `team_member.role`. Viewer read-only. `accepted-risk` lead+. Admin+ `/api/team/members`. ADR-036. Server cannot claim in-browser export control. Draft, not merged. |
-| P1.4 | Append-only audit | not_started | No unsalted IP hash; HMAC with rotation or omit. |
+| P1.3 | RBAC on Team APIs | done | Live `team_member.role`. Viewer read-only. `accepted-risk` lead+. Admin+ `/api/team/members`. ADR-036. Merged PR #3 squash `4cefe02`. A3 lab 36/36 (Chrome+Firefox+Postgres). Server cannot claim in-browser export control. |
+| P1.4 | Append-only audit | not_started | No unsalted IP hash; HMAC with rotation or omit. ADR-023. |
 | P1.5 | Collab HTTP for policy/review/ReportDTO | not_started | Persist allowlist is already a kernel invariant. |
 | P1.6 | Team UI | not_started | After kernel+OIDC. |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
