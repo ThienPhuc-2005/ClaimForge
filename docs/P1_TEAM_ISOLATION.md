@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4–P1.6 are stacked drafts (PR #4 audit, PR #5 collab HTTP, P1.6 Team UI). Not merged unless asked.
+**Status:** P1.0 accepted. P1.1–P1.6 are on `main`. P1.7 (Postgres RLS) is in flight on `feat/p1.7-rls`. Encrypted capture share is not P1.
 
 **Decided 2026-08-30:**
 
@@ -184,7 +184,7 @@ Collab HTTP (policy/review/ReportDTO over HTTP) is P1.5; the kernel already appl
 
 ### Postgres RLS
 
-PGLite tests prove application-level isolation and constraints. **Neon/Postgres RLS is defense-in-depth**, not the P1.1 bar. Call the kernel “stable” for RLS only after a dedicated integration test against real Postgres. Do not claim RLS is enforced until that test exists.
+PGLite tests prove application-level isolation and constraints. P1.7 (`migrations/0006_team_rls.sql`, ADR-040) adds `FORCE ROW LEVEL SECURITY` on member/workspace/collab/audit keyed by `claimforge.tenant_id`. The kernel `SET LOCAL`s that GUC from the WeakMap snapshot in the same transaction. PGLite accepts the DDL but does not enforce it. The claim is the dedicated Postgres integration test (`p1-7-rls.test.ts`) against a non-superuser role. Lookup tables (`team_tenant`, `team_oidc_pending`, `team_session`) are not RLS'd. This is not cryptographic isolation: a stolen app role that knows a tenant UUID can still `SET` the GUC.
 
 ### CI vs merge policy
 
@@ -254,4 +254,15 @@ Out of scope: P1.6 Team UI, HMAC-IP, tenant listing, capture upload.
 - P1.6 gates in `p1-gates.ts` and `p1-6-ui.test.ts`
 
 Out of scope: tenant listing, HMAC-IP, capture upload, IdP logout, OIDC discovery.
+
+## 15. P1.7 deliverable
+
+- ADR-040
+- Migration `0006_team_rls.sql` (additive FORCE RLS)
+- Kernel `SET LOCAL claimforge.tenant_id` in `withActiveMember`
+- Dedicated Postgres integration test (non-superuser, missing GUC hides rows)
+- CI Postgres service + `CLAIMFORGE_TEAM_RLS_DATABASE_URL`
+
+Out of scope: tenant listing, HMAC-IP, capture upload, IdP logout, OIDC discovery, JIT.
+
 

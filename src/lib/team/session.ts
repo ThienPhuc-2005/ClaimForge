@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { requireActiveMember, resolveTenantContext, type TenantContext } from "./context.ts";
+import { requireActiveMember, resolveTenantContext, withActiveMember, type TenantContext } from "./context.ts";
 import { TeamAuthError, TeamNotFoundError } from "./errors.ts";
 import type { TeamSql } from "./types.ts";
 
@@ -55,18 +55,19 @@ export async function mintTeamSession(
   ctx: TenantContext,
   now: Date = new Date(),
 ): Promise<{ token: string; session: TeamSession }> {
-  const ident = await requireActiveMember(sql, ctx);
-  const token = newToken();
-  const id = randomUUID();
-  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  const rows = await sql.query<SessionRow>(
-    `INSERT INTO team_session (id, token_hash, tenant_id, user_key, expires_at, created_at)
+  return withActiveMember(sql, ctx, async (tx, ident) => {
+    const token = newToken();
+    const id = randomUUID();
+    const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+    const rows = await tx.query<SessionRow>(
+      `INSERT INTO team_session (id, token_hash, tenant_id, user_key, expires_at, created_at)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, token_hash, tenant_id, user_key, created_at, rotated_at, expires_at`,
-    [id, hashToken(token), ident.tenantId, ident.userKey, expiresAt.toISOString(), now.toISOString()],
-  );
-  if (!rows[0]) throw new TeamAuthError("login failed");
-  return { token, session: mapSession(rows[0]) };
+      [id, hashToken(token), ident.tenantId, ident.userKey, expiresAt.toISOString(), now.toISOString()],
+    );
+    if (!rows[0]) throw new TeamAuthError("login failed");
+    return { token, session: mapSession(rows[0]) };
+  });
 }
 
 export async function loadTeamSession(
@@ -89,9 +90,11 @@ export async function loadTeamSession(
   const row = rows[0];
   if (!row) return null;
   try {
-    const context = await resolveTenantContext(sql, row.user_key, row.tenant_id);
-    await requireActiveMember(sql, context);
-    return { session: mapSession(row), context };
+    return await sql.transaction(async (tx) => {
+      const context = await resolveTenantContext(tx, row.user_key, row.tenant_id);
+      await requireActiveMember(tx, context);
+      return { session: mapSession(row), context };
+    });
   } catch (err) {
     if (err instanceof TeamNotFoundError) return null;
     throw err;

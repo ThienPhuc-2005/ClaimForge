@@ -15,14 +15,19 @@ const globalRef = globalThis as typeof globalThis & {
   __teamNeonSql__?: TeamSql;
 };
 
-/** Wrap a PGLite instance or transaction client. Nested transactions use PGLite's own tx. */
+/** Wrap a PGLite instance or transaction client. Nested transactions reuse this client. */
 export function wrapPglite(client: PgliteLike): TeamSql {
   const sql: TeamSql = {
     query: async <T = Record<string, unknown>>(text: string, params: unknown[] = []) => {
       const result = await client.query(text, params);
       return result.rows as T[];
     },
-    transaction: (fn) => client.transaction((tx) => fn(wrapPglite(tx))),
+    transaction: (fn) => {
+      if (typeof client.transaction !== "function") {
+        return fn(sql);
+      }
+      return client.transaction((tx) => fn(wrapPglite(tx)));
+    },
   };
   return sql;
 }

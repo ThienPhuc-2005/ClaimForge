@@ -38,14 +38,17 @@ const AUDIT_SQL = readFileSync(join(root, "migrations/0005_team_audit.sql"), "ut
 
 function wrapSql(client: {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
-  transaction: <T>(fn: (tx: never) => Promise<T>) => Promise<T>;
+  transaction?: <T>(fn: (tx: never) => Promise<T>) => Promise<T>;
 }): TeamSql {
   const sql: TeamSql = {
     query: async <T = Record<string, unknown>>(text: string, params: unknown[] = []) => {
       const result = await client.query(text, params);
       return result.rows as T[];
     },
-    transaction: (fn) => client.transaction((tx) => fn(wrapSql(tx as never))),
+    transaction: (fn) => {
+      if (typeof client.transaction !== "function") return fn(sql);
+      return client.transaction((tx) => fn(wrapSql(tx as never)));
+    },
   };
   return sql;
 }

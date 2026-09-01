@@ -126,6 +126,14 @@ The desk stays Solo by default. An attacker must not:
 
 Callback opens More → Team via `/?team=1` with no tenant UUID in the query.
 
+## Team mode (P1.7 — Postgres RLS)
+
+App SQL still scopes by `tenant_id`. RLS is defense-in-depth on Neon/Postgres:
+
+- Missing `claimforge.tenant_id` hides member/workspace/collab/audit rows.
+- Kernel sets that GUC from the verified session tenant, not from the caller.
+- Superusers and `BYPASSRLS` still see everything. A stolen app role that knows a tenant UUID can `SET` the GUC. Slug / session-hash lookups are not RLS'd.
+
 ## Limitations
 
 - Incomplete JSON captures used to recurse (`parseHarLike` ↔ `parseRawHttp`) until the stack overflowed. They now fail per actor with a parse error. Parser fuzz lives in CI.

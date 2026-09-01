@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { rejectCallerTenantId, requireActiveMember, type TenantContext } from "./context.ts";
+import { rejectCallerTenantId, requireActiveMember, withActiveMember, type TenantContext } from "./context.ts";
 import { TeamIsolationError, TeamPersistError, TeamValidationError } from "./errors.ts";
 import { isTeamRole, type TeamRole, type TeamSql } from "./types.ts";
 
@@ -287,24 +287,25 @@ export async function listAudit(
   ctx: TenantContext,
   input: { limit?: number } = {},
 ): Promise<TeamAuditEvent[]> {
-  const ident = await requireActiveMember(sql, ctx);
-  rejectCallerTenantId(input);
-  rejectCallerAuditSpoof(input);
-  const limit =
-    input.limit === undefined
-      ? 100
-      : Number.isInteger(input.limit) && input.limit >= 1 && input.limit <= AUDIT_LIST_MAX
-        ? input.limit
-        : (() => {
-            throw new TeamValidationError("audit limit is invalid");
-          })();
-  const rows = await sql.query<AuditRow>(
-    `SELECT id, tenant_id, at, actor_user_key, actor_role, action, target_kind, target_id, detail_json
+  return withActiveMember(sql, ctx, async (tx, ident) => {
+    rejectCallerTenantId(input);
+    rejectCallerAuditSpoof(input);
+    const limit =
+      input.limit === undefined
+        ? 100
+        : Number.isInteger(input.limit) && input.limit >= 1 && input.limit <= AUDIT_LIST_MAX
+          ? input.limit
+          : (() => {
+              throw new TeamValidationError("audit limit is invalid");
+            })();
+    const rows = await tx.query<AuditRow>(
+      `SELECT id, tenant_id, at, actor_user_key, actor_role, action, target_kind, target_id, detail_json
      FROM team_audit
      WHERE tenant_id = $1
      ORDER BY at DESC, id DESC
      LIMIT $2`,
-    [ident.tenantId, limit],
-  );
-  return rows.map(mapEvent);
+      [ident.tenantId, limit],
+    );
+    return rows.map(mapEvent);
+  });
 }

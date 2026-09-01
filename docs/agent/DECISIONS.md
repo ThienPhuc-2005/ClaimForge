@@ -154,7 +154,7 @@ Loot, replay curl, and raw capture strings that exist only in the tab are local 
 
 ## ADR-028 — PGLite proves the kernel; Postgres RLS is defense-in-depth
 
-P1.1 adversarial tests run against PGLite (transactional DDL, constraints, repo scoping). Row Level Security on Neon/Postgres is not claimed until a dedicated integration test exists.
+P1.1 adversarial tests run against PGLite (transactional DDL, constraints, repo scoping). Row Level Security on Neon/Postgres is not claimed until a dedicated integration test exists. P1.7 (ADR-040) is that test.
 
 ## ADR-029 — CI green is not a merge gate until a ruleset exists
 
@@ -217,5 +217,17 @@ Locked for the P1.3 epic:
 - Same-tenant denials are `TeamForbiddenError` (HTTP 403). Missing/cross-tenant stay `TeamNotFoundError` (no existence leak).
 - Members HTTP: `GET/POST/PATCH/DELETE /api/team/members` bound to the opaque session tenant. No `tenant_id` in body. No tenant list. `GET /api/team/session` still omits role. JWT is not an input.
 - Server RBAC may refuse to persist or return loot/replay; it does not control in-browser copy (ADR-027). Collab HTTP is P1.5 (ADR-038).
+
+## ADR-040 — P1.7 Postgres RLS is GUC fail-closed defense-in-depth
+
+Locked for the P1.7 epic:
+
+- Additive `migrations/0006_team_rls.sql`. Does not rewrite 0003–0005.
+- `ENABLE` + `FORCE ROW LEVEL SECURITY` on `team_member`, `team_workspace`, `team_workspace_collab`, `team_audit`.
+- Policy uses `current_setting('claimforge.tenant_id', true)`. Missing GUC returns no rows (fail-closed).
+- Kernel `withActiveMember` / `requireActiveMember` `SET LOCAL` the GUC from the WeakMap snapshot inside the same transaction as the SQL.
+- `team_tenant`, `team_oidc_pending`, and `team_session` stay lookup tables (slug / state_hash / token_hash). A stolen app role that knows a tenant UUID can still `SET` the GUC — this is not cryptographic isolation.
+- PGLite accepts the DDL but does not enforce RLS. The claim is only valid against a non-superuser, non-`BYPASSRLS` Postgres role (CI + Neon).
+- Still no JIT, no tenant list, no capture share, no HMAC-IP (ADR-023).
 
 

@@ -1,7 +1,7 @@
 /**
- * P1 catalog: each isolation / OIDC / RBAC / audit / collab-HTTP / Team-UI invariant has a test that would fail if the fix is reverted.
+ * P1 catalog: each isolation / OIDC / RBAC / audit / collab-HTTP / Team-UI / RLS invariant has a test that would fail if the fix is reverted.
  */
-export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5", "P1.6"] as const;
+export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5", "P1.6", "P1.7"] as const;
 export type P1Item = (typeof P1_ITEMS)[number];
 
 export interface P1Gate {
@@ -816,6 +816,32 @@ export const P1_GATES: P1Gate[] = [
     before: "Location included tenant UUID or stayed on Findings with no Team panel",
     after: "Callback opens More → Team via /?team=1; no tenant_id query",
     evidenceTest: "p1-6-ui.test.ts:OIDC callback opens Team inspect without a tenant_id query",
+  },
+  {
+    id: "P1.7-additive-rls",
+    p1: "P1.7",
+    bug: "RLS was claimed inside 0003 or a rewrite of 0005",
+    before: "Team tables had no FORCE RLS; isolation was app WHERE only",
+    after: "0006 is additive FORCE RLS on member/workspace/collab/audit; session/tenant/pending stay lookup tables",
+    evidenceTest:
+      "p1-7-rls.test.ts:0006 is additive; failed 0006 rolls back and keeps 0003/0004/0005; 0003-0005 have no RLS policy",
+  },
+  {
+    id: "P1.7-pglite-not-the-claim",
+    p1: "P1.7",
+    bug: "PGLite DDL was treated as a Postgres RLS claim",
+    before: "ENABLE RLS in PGLite was assumed to filter rows",
+    after: "PGLite still bootstraps after 0006; RLS is only claimed against real Postgres",
+    evidenceTest: "p1-7-rls.test.ts:PGLite still bootstraps after 0006 DDL (RLS is not claimed on PGLite)",
+  },
+  {
+    id: "P1.7-guc-fail-closed",
+    p1: "P1.7",
+    bug: "App role SELECT * FROM team_workspace returned every tenant",
+    before: "Stolen DATABASE_URL listed all workspaces; missing WHERE leaked cross-tenant rows",
+    after: "Missing claimforge.tenant_id hides rows; kernel SET LOCAL lists only the session tenant",
+    evidenceTest:
+      "p1-7-rls.test.ts:Postgres RLS: missing GUC hides rows; kernel GUC lists only the session tenant",
   },
 ];
 

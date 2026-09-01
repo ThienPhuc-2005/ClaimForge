@@ -1,3 +1,9 @@
+## 2026-09-01 — P1.7 Postgres RLS in progress
+
+- User asked to do remaining work. Did **not** start capture-share, JIT, tenant listing, HMAC-IP, or IdP logout (those stay out of scope / need a new threat model).
+- Slice: P1.7 `feat/p1.7-rls` — additive `0006_team_rls.sql`, kernel `SET LOCAL claimforge.tenant_id`, Postgres integration test (non-superuser). ADR-040.
+- Local tests: **512 pass / 0 fail** with `CLAIMFORGE_TEAM_RLS_DATABASE_URL`. Draft PR next; do not merge unless asked.
+
 ## 2026-09-01 — A-lab P1.4–P1.6 (sandbox-only)
 
 - User pick **2 = Lab A Team** (typed `22`). Did not start capture-share. No product commit.
