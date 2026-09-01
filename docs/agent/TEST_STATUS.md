@@ -1,5 +1,5 @@
-- **When:** P1.7 squash-merged to `main` (`9cbd88d`, PR #7).
-- **Product SHA:** `9cbd88d` (`git rev-parse HEAD` after this docs commit will differ; do not add a SHA-echo commit).
+- **When:** P1.7 on `main` (`9cbd88d`). A-lab after merge: Chromium+Postgres 31/31 (sandbox-only).
+- **Product SHA:** `9cbd88d`.
 - **Commands (GitHub checkout of `main`):**
   - `npm test` — **512 tests**. Sandbox-doc tests skip (4) when `AGENTS.md` is absent. RLS Postgres test runs when `CLAIMFORGE_TEAM_RLS_DATABASE_URL` is set (CI service).
   - `npm run typecheck` → pass
@@ -8,4 +8,4 @@
   - `npm run build` → pass
 - **CI (evidence, not a merge gate, ADR-029):** [run 33509604074](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33509604074) success on `9cbd88d`.
 - **Browser UI:** More → Team unchanged.
-- **A-lab:** P1.4–P1.6 Chromium+Postgres 27/27 still the last UI lab. P1.7 is a dedicated Postgres RLS test, not a browser lab.
+- **A-lab:** Chromium+Postgres **31/31**. Firefox skipped (GTK). Includes P1.7 FORCE RLS (missing GUC hides rows). Lab artifacts are not in git.

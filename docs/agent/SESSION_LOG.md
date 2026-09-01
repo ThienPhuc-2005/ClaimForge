@@ -1,4 +1,12 @@
+## 2026-09-01 — A-lab P1.4–P1.7 (sandbox-only)
+
+- User pick **2 = Lab A Team** after P1.7 merge. Did not start capture-share. Lab script is untracked (not committed).
+- Chromium cookie jar + real Postgres 16: **31/31 pass** (session omits role; Bearer JWT 401; HTTP 400; `token_hash` is SHA-256; audit omits tenantId/IP; viewer/analyst/lead RBAC; cross-tenant 404; capture rejected; loot/replay projected; admin cannot assign owner; last owner stays; member delete keeps audit; `team_audit` UPDATE rejected; missing GUC hides workspaces; SET LOCAL lists session tenant; FORCE RLS on member/workspace/collab/audit; More → Team inspect).
+- Firefox did not launch (missing GTK). Counted as skip, not a product fail.
+- Next agent: clone GitHub, checkout `main`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.7.
+
 ## 2026-09-01 — P1.7 merged to main
+
 
 - User pick **2 = merge P1.7**. Squash PR [#7](https://github.com/ThienPhuc-2005/ClaimForge/pull/7) → `9cbd88d`.
 - CI on merge: [run 33509604074](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33509604074) success (evidence, not a merge gate).
