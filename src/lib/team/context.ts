@@ -120,7 +120,36 @@ function mapTenant(row: TenantRow): TeamTenant {
   };
 }
 
-/** Brand a context from a membership row already loaded from SQL. Not exported. */
+export const TENANT_GUC = "claimforge.tenant_id";
+export const USER_KEY_GUC = "claimforge.user_key";
+
+export async function applyTenantGuc(sql: TeamSql, tenantId: string): Promise<void> {
+  if (!tenantId || tenantId.length > 128 || tenantId.includes("\0")) {
+    throw new TeamIsolationError("unverified tenant context");
+  }
+  await sql.query("SELECT set_config($1, $2, true)", [TENANT_GUC, tenantId]);
+}
+
+async function applyUserKeyGuc(sql: TeamSql, userKey: string): Promise<void> {
+  await sql.query("SELECT set_config($1, $2, true)", [USER_KEY_GUC, userKey]);
+}
+
+/**
+ * SET LOCAL claimforge.tenant_id inside a transaction, then re-SELECT membership.
+ * Callers that already hold a transaction should use requireActiveMember on that tx.
+ */
+export async function withActiveMember<T>(
+  sql: TeamSql,
+  ctx: TenantContext,
+  fn: (tx: TeamSql, ident: BoundIdentity) => Promise<T>,
+): Promise<T> {
+  boundIdentity(ctx);
+  return sql.transaction(async (tx) => {
+    const ident = await requireActiveMember(tx, ctx);
+    return fn(tx, ident);
+  });
+}
+
 function tenantContextFromDbRow(member: TeamMember): TenantContext {
   if (!member.tenantId || !member.userKey || !isTeamRole(member.role)) {
     throw new TeamIsolationError("membership row is incomplete");
@@ -174,6 +203,7 @@ function boundIdentity(ctx: TenantContext): BoundIdentity {
  */
 export async function requireActiveMember(sql: TeamSql, ctx: TenantContext): Promise<BoundIdentity> {
   const bound = boundIdentity(ctx);
+  await applyTenantGuc(sql, bound.tenantId);
   const member = await loadMember(sql, bound.tenantId, bound.userKey);
   if (!member) throw new TeamNotFoundError("not found");
   return freezeIdentity(member.tenantId, member.userKey, member.role);
@@ -229,6 +259,7 @@ export async function bootstrapTenant(
   const ownerUserKey = requireUserKey(input.ownerUserKey);
   return sql.transaction(async (tx) => {
     const tenantId = randomUUID();
+    await applyTenantGuc(tx, tenantId);
     await tx.query("INSERT INTO team_tenant (id, slug, name, bootstrap_actor) VALUES ($1, $2, $3, $4)", [
       tenantId,
       slug,
@@ -260,17 +291,24 @@ export async function resolveTenantContext(
     if (typeof requestedTenantId !== "string" || !requestedTenantId.trim()) {
       throw new TeamNotFoundError("not found");
     }
-    const member = await loadMember(sql, requestedTenantId.trim(), userKey);
-    if (!member) throw new TeamNotFoundError("not found");
-    return tenantContextFromDbRow(member);
+    const tenantId = requestedTenantId.trim();
+    return sql.transaction(async (tx) => {
+      await applyTenantGuc(tx, tenantId);
+      const member = await loadMember(tx, tenantId, userKey);
+      if (!member) throw new TeamNotFoundError("not found");
+      return tenantContextFromDbRow(member);
+    });
   }
-  const rows = await sql.query<MemberRow>(
-    "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE user_key = $1",
-    [userKey],
-  );
-  if (rows.length === 0) throw new TeamNotFoundError("not found");
-  if (rows.length > 1) throw new TeamAmbiguousError("user belongs to multiple tenants");
-  return tenantContextFromDbRow(mapMember(rows[0]!));
+  return sql.transaction(async (tx) => {
+    await applyUserKeyGuc(tx, userKey);
+    const rows = await tx.query<MemberRow>(
+      "SELECT tenant_id, user_key, role, created_at FROM team_member WHERE user_key = $1",
+      [userKey],
+    );
+    if (rows.length === 0) throw new TeamNotFoundError("not found");
+    if (rows.length > 1) throw new TeamAmbiguousError("user belongs to multiple tenants");
+    return tenantContextFromDbRow(mapMember(rows[0]!));
+  });
 }
 
 export async function resolveTenantContextBySlug(
