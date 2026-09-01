@@ -1,4 +1,4 @@
-- **When:** P1.7 on `main` (`9cbd88d`). A-lab after merge: Chromium+Postgres 31/31 (sandbox-only).
+- **When:** P1.7 on `main` (`9cbd88d`). A-lab reconfirmed after new-chat Lab A: Chromium+Postgres 31/31 (sandbox-only).
 - **Product SHA:** `9cbd88d`.
 - **Commands (GitHub checkout of `main`):**
   - `npm test` — **512 tests**. Sandbox-doc tests skip (4) when `AGENTS.md` is absent. RLS Postgres test runs when `CLAIMFORGE_TEAM_RLS_DATABASE_URL` is set (CI service).
@@ -8,4 +8,4 @@
   - `npm run build` → pass
 - **CI (evidence, not a merge gate, ADR-029):** [run 33509604074](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33509604074) success on `9cbd88d`.
 - **Browser UI:** More → Team unchanged.
-- **A-lab:** Chromium+Postgres **31/31**. Firefox skipped (GTK). Includes P1.7 FORCE RLS (missing GUC hides rows). Lab artifacts are not in git.
+- **A-lab:** Chromium+Postgres **31/31** reconfirmed. Firefox skipped (no browser binary). Includes P1.7 FORCE RLS (missing GUC hides rows). Lab artifacts are not in git.

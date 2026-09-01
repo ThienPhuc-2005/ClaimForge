@@ -1,3 +1,10 @@
+## 2026-09-01 — A-lab reconfirm recorded on main
+
+- User pick **2 = ghi A-lab lên main** after a new-chat Lab A run. Docs only. Product still `9cbd88d`. Lab script stays untracked.
+- Chromium cookie jar + real Postgres 16: **31/31 pass** (session omits role; `__Host-` cookie; Bearer JWT 401; HTTP 400; `token_hash` is SHA-256; audit omits tenantId/IP; viewer/analyst/lead RBAC; cross-tenant 404; capture rejected; loot/replay projected; admin cannot assign owner; last owner stays; member delete keeps audit; `team_audit` UPDATE rejected; missing GUC hides workspaces; SET LOCAL lists session tenant; FORCE RLS on member/workspace/collab/audit; More → Team inspect).
+- Firefox skipped (no browser binary). Counted as skip, not a product fail. Did not start capture-share.
+- Next agent: clone GitHub, checkout `main`, read `docs/agent/HANDOFF.md`. Do not scaffold. Do not re-implement P1.4–P1.7. Do not merge unless they pick merge.
+
 ## 2026-09-01 — handoff to new chat
 
 - User asked to bàn giao for a new chat. No product change. Lab script stays untracked.
