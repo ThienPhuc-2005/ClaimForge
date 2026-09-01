@@ -8,5 +8,5 @@
   - `npm run lint` → pass
   - `npm run audit:deps` → 0 high
   - `npm run build` → pass
-- **CI:** wait for Actions on the draft PR. Green is evidence, not a merge gate (ADR-029).
+- **CI:** wait for Actions on draft [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6). Green is evidence, not a merge gate (ADR-029).
 - **Browser UI:** More → Team is API-backed inspect. Primary tabs unchanged.

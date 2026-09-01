@@ -4,7 +4,7 @@
 - More → Team inspect view. Slug sign-in, members, workspaces, push/pull collab, audit. ADR-039.
 - Role from members list. No tenant list. Loot/replay copy documented as local (ADR-027). Callback opens `/?team=1`.
 - Local gates: typecheck, lint, `npm test` 509 / 505 pass / 4 skip / 0 fail, audit 0 high, build pass.
-- Next: wait for CI on the draft PR. Do not start capture-share unless asked.
+- Draft [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6). Next: wait for CI. Do not start capture-share unless asked.
 
 
 ## 2026-09-01 — P1.5 collab HTTP started

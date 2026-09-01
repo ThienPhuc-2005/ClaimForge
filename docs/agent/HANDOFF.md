@@ -4,7 +4,7 @@ Read this file first. Then `docs/P1_TEAM_ISOLATION.md` and `docs/agent/DECISIONS
 
 ## Snapshot (2026-09-01)
 
-1. **Repo:** `ThienPhuc-2005/ClaimForge`. `main` = **`944f81b`**. Drafts: P1.4 [PR #4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4), P1.5 [PR #5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5), P1.6 on **`feat/p1.6-team-ui`** (stacked on P1.5). **Do not merge** unless the user says merge.
+1. **Repo:** `ThienPhuc-2005/ClaimForge`. `main` = **`944f81b`**. Drafts: P1.4 [PR #4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4), P1.5 [PR #5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5), P1.6 [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6) on **`feat/p1.6-team-ui`** (stacked on P1.5). **Do not merge** unless the user says merge.
 2. **Milestone:** v0.9 Core Hardening. **P0 + P1.0–P1.3 merged.** P1.4–P1.6 draft stacked.
 3. **Done on main:** P0.1–P0.8. P1.1 isolation kernel. P1.2 OIDC + opaque sessions + operator CLI. P1.3 live `team_member.role` RBAC + session-bound `/api/team/members`. ADR-036.
 4. **Unmerged stack:** P1.4 audit (`0005`, ADR-037). P1.5 collab HTTP (ADR-038). P1.6 More → Team (ADR-039).
