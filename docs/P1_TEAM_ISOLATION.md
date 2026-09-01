@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4+ (audit, collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4 (append-only audit) is on `feat/p1.4-audit` (draft PR; not merged). P1.5+ (collab HTTP, UI) stay out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 
@@ -91,7 +91,7 @@ Composite primary keys and composite FKs make a workspace or collab row physical
 
 The same `user_key` **may** belong to multiple tenants (separate member rows). Isolation is `(tenant_id, user_key)`, not `user_key` alone.
 
-**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies. P1.2 adds `team_oidc_pending` and `team_session` in `migrations/0004_team_oidc_sessions.sql` without rewriting `0003`.
+**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies. P1.2 adds `team_oidc_pending` and `team_session` in `migrations/0004_team_oidc_sessions.sql` without rewriting `0003`. P1.4 adds `team_audit` in `migrations/0005_team_audit.sql` without rewriting `0003` or `0004`.
 
 ---
 
@@ -174,7 +174,7 @@ Instance-wide confidential OIDC client. Endpoints and secrets are env-only (`CLA
 
 ### Audit (P1.4)
 
-Append-only. No capture bodies, no JWKS material. **Do not store a plain hash of client IP** (low entropy, rainbow-tableable). Either omit IP or store `HMAC(ip, rotating_server_key)` with key rotation and no raw IP alongside. User-agent similarly: omit or HMAC.
+Append-only `team_audit`. Who changed whose collab/membership/workspace. No capture bodies, no JWKS material. **IP and User-Agent are omitted** (ADR-023) — never raw IP and never `sha256(ip)`. Actor is the live session member. Tenant-scoped reads. Deleting a member does not erase rows. `GET /api/team/audit` is session-bound.
 
 ### RBAC HTTP (P1.3)
 
@@ -223,4 +223,15 @@ Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI, tenant listing, IdP logout,
 - Viewer read-only; `accepted-risk` lead+; admin+ member management; last owner protected
 - P1.3 gates in `p1-gates.ts` and `p1-3-rbac.test.ts` / `p1-3-http.test.ts`
 
-Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI.
+Out of scope for that slice: P1.4 audit, P1.5 collab HTTP, P1.6 UI.
+
+## 12. P1.4 deliverable
+
+- ADR-037 + ADR-023 omit-IP lock
+- Migration `0005_team_audit.sql` (additive; UPDATE trigger; no member FK; no IP/UA columns)
+- Kernel append on member/workspace/collab mutations in the same transaction
+- `GET /api/team/audit` (session-bound; no tenant_id; no actor override)
+- P1.4 gates in `p1-gates.ts` and `p1-4-audit.test.ts` / `p1-4-http.test.ts`
+
+Out of scope: P1.5 collab HTTP, P1.6 UI, HMAC-IP, tenant listing.
+

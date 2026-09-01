@@ -91,6 +91,18 @@ The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque t
 
 P1.3 enforces RBAC from the live `team_member.role` (viewer read-only; `accepted-risk` lead+; members HTTP admin+). It does not persist collab over HTTP (P1.5) or list tenants.
 
+## Team mode (P1.4 — append-only audit)
+
+Membership, workspace, and collab mutations append a tenant-scoped audit row. An attacker must not:
+
+- Rewrite or delete a row to hide who changed whose member/collab (UPDATE is rejected; member delete does not cascade audit).
+- Attribute an event to another actor via body/query (`actorUserKey`) or a minted/JWT `role`.
+- Store raw IP, `sha256(ip)`, User-Agent, capture bodies, or JWKS material on the row.
+- Read another tenant's events, including by sending `tenant_id`.
+- Leave an audit row for a mutation that rolled back.
+
+`GET /api/team/audit` uses the opaque session. JSON omits `tenantId` and IP. Viewer+ of that tenant may read. IP/UA are omitted rather than hashed (ADR-023).
+
 ## Limitations
 
 - Incomplete JSON captures used to recurse (`parseHarLike` ↔ `parseRawHttp`) until the stack overflowed. They now fail per actor with a parse error. Parser fuzz lives in CI.

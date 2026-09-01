@@ -27,6 +27,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
 const LAB_SQL = readFileSync(join(root, "migrations/0002_lab_revoke.sql"), "utf8");
 const TEAM_SQL = readFileSync(join(root, "migrations/0003_team_isolation.sql"), "utf8");
+const AUDIT_SQL = readFileSync(join(root, "migrations/0005_team_audit.sql"), "utf8");
 const SECRET = "test-bootstrap-secret-1";
 
 async function openKernel() {
@@ -34,6 +35,7 @@ async function openKernel() {
   await pg.waitReady;
   await pg.exec(LAB_SQL);
   await pg.exec(TEAM_SQL);
+  await pg.exec(AUDIT_SQL);
   return { pg, sql: wrapPglite(pg as never) };
 }
 

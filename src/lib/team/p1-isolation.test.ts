@@ -34,6 +34,7 @@ const root = join(here, "../../..");
 const SECRET = "test-bootstrap-secret-1";
 const LAB_SQL = readFileSync(join(root, "migrations/0002_lab_revoke.sql"), "utf8");
 const TEAM_SQL = readFileSync(join(root, "migrations/0003_team_isolation.sql"), "utf8");
+const AUDIT_SQL = readFileSync(join(root, "migrations/0005_team_audit.sql"), "utf8");
 
 function wrapSql(client: {
   query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
@@ -54,6 +55,7 @@ async function openKernel() {
   await pg.waitReady;
   await pg.exec(LAB_SQL);
   await pg.exec(TEAM_SQL);
+  await pg.exec(AUDIT_SQL);
   return { pg, sql: wrapSql(pg as never) };
 }
 

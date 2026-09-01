@@ -1,7 +1,7 @@
 /**
- * P1 catalog: each isolation / OIDC invariant has a test that would fail if the fix is reverted.
+ * P1 catalog: each isolation / OIDC / RBAC / audit invariant has a test that would fail if the fix is reverted.
  */
-export const P1_ITEMS = ["P1.1", "P1.2", "P1.3"] as const;
+export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4"] as const;
 export type P1Item = (typeof P1_ITEMS)[number];
 
 export interface P1Gate {
@@ -613,6 +613,88 @@ export const P1_GATES: P1Gate[] = [
     before: "A role=owner header or cleartext cookie was enough",
     after: "Only the opaque HTTPS session cookie; Bearer is 401; HTTP is 400",
     evidenceTest: "p1-3-http.test.ts:Bearer JWT is not a Team session; HTTP members is 400",
+  },
+  {
+    id: "P1.4-append-only",
+    p1: "P1.4",
+    bug: "Audit rows could be rewritten after insert",
+    before: "UPDATE team_audit SET actor_user_key = eve succeeded",
+    after: "UPDATE is rejected; team_audit is append-only",
+    evidenceTest: "p1-4-audit.test.ts:team_audit UPDATE is rejected (append-only)",
+  },
+  {
+    id: "P1.4-member-delete-keeps-log",
+    p1: "P1.4",
+    bug: "Deleting a member cascaded their who-changed-what rows",
+    before: "ON DELETE CASCADE from team_member erased add/remove history",
+    after: "No member FK; removeMember leaves prior rows plus member.remove",
+    evidenceTest: "p1-4-audit.test.ts:deleting a member does not erase audit rows",
+  },
+  {
+    id: "P1.4-actor-live-not-client",
+    p1: "P1.4",
+    bug: "Audit actor taken from body or minted ctx.role",
+    before: "actorUserKey=eve or frozen admin role attributed the event",
+    after: "Caller actor keys rejected; actor_role is live team_member.role",
+    evidenceTest: "p1-4-audit.test.ts:caller actorUserKey is rejected; actor is the live member row",
+  },
+  {
+    id: "P1.4-no-ip-hash",
+    p1: "P1.4",
+    bug: "Raw IP or sha256(ip) stored on the audit row",
+    before: "ip / ip_hash / user_agent columns or detail keys",
+    after: "Schema omits IP and UA; detail with ip or ip_hash is PersistError (ADR-023)",
+    evidenceTest: "p1-4-audit.test.ts:audit schema omits IP and User-Agent; detail with ip/sha256 is rejected",
+  },
+  {
+    id: "P1.4-no-capture-jwks",
+    p1: "P1.4",
+    bug: "Collab bodies, compact JWT, or JWKS material stored in detail_json",
+    before: "policy JSON or kty/n/e survived on the audit row",
+    after: "Closed detail shapes; capture/JWKS/JWT rejected",
+    evidenceTest: "p1-4-audit.test.ts:audit detail rejects capture bodies and JWKS material",
+  },
+  {
+    id: "P1.4-tenant-scoped-read",
+    p1: "P1.4",
+    bug: "listAudit returned another tenant's events or accepted tenant_id",
+    before: "Knowing a tenant UUID listed their membership changes",
+    after: "SQL uses live membership tenant; caller tenantId is isolation error",
+    evidenceTest: "p1-4-audit.test.ts:listAudit is tenant-scoped; other tenant does not see events",
+  },
+  {
+    id: "P1.4-failed-write-no-row",
+    p1: "P1.4",
+    bug: "Duplicate addMember or missing remove still inserted audit",
+    before: "Audit committed outside the mutation transaction",
+    after: "Same transaction; failed write leaves the log unchanged",
+    evidenceTest: "p1-4-audit.test.ts:failed member add does not insert an audit row",
+  },
+  {
+    id: "P1.4-0005-additive",
+    p1: "P1.4",
+    bug: "P1.4 rewrote 0003/0004 or left half-applied audit DDL",
+    before: "Kernel migrations gained audit tables",
+    after: "0005 additive; failed transaction keeps 0003/0004; no IP columns",
+    evidenceTest:
+      "p1-4-audit.test.ts:0005 is additive; failed 0005 rolls back and keeps 0003/0004; 0003/0004 have no audit table",
+  },
+  {
+    id: "P1.4-collab-fields-only",
+    p1: "P1.4",
+    bug: "Collab audit stored policy/review/report JSON",
+    before: "detail_json included DEFAULT_POLICY and review states",
+    after: "detail is {fields:['policy','review']}; bodies omitted",
+    evidenceTest: "p1-4-audit.test.ts:collab audit stores field names not policy/review/report bodies",
+  },
+  {
+    id: "P1.4-http-session",
+    p1: "P1.4",
+    bug: "GET /api/team/audit accepted Bearer JWT, tenant_id, or leaked tenantId/IP",
+    before: "Unauthed or JWT listed events; JSON included tenantId",
+    after: "Opaque HTTPS session only; spoof query 400; public events omit tenantId and IP",
+    evidenceTest:
+      "p1-4-http.test.ts:GET /api/team/audit is session-bound; tenant_id/actor query rejected; JSON omits tenantId and IP",
   },
 ];
 

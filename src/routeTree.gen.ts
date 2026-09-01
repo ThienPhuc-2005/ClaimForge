@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiLabSplatRouteImport } from './routes/api/lab/$'
+import { Route as ApiTeamAuditRouteImport } from './routes/api/team/audit'
 import { Route as ApiTeamMembersRouteImport } from './routes/api/team/members'
 import { Route as ApiTeamSessionRouteImport } from './routes/api/team/session'
 import { Route as ApiTeamOidcCallbackRouteImport } from './routes/api/team/oidc/callback'
@@ -25,6 +26,11 @@ const IndexRoute = IndexRouteImport.update({
 const ApiLabSplatRoute = ApiLabSplatRouteImport.update({
   id: '/api/lab/$',
   path: '/api/lab/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamAuditRoute = ApiTeamAuditRouteImport.update({
+  id: '/api/team/audit',
+  path: '/api/team/audit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTeamMembersRoute = ApiTeamMembersRouteImport.update({
@@ -56,6 +62,7 @@ const ApiTeamOidcLogoutRoute = ApiTeamOidcLogoutRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/audit': typeof ApiTeamAuditRoute
   '/api/team/members': typeof ApiTeamMembersRoute
   '/api/team/session': typeof ApiTeamSessionRoute
   '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/audit': typeof ApiTeamAuditRoute
   '/api/team/members': typeof ApiTeamMembersRoute
   '/api/team/session': typeof ApiTeamSessionRoute
   '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/lab/$': typeof ApiLabSplatRoute
+  '/api/team/audit': typeof ApiTeamAuditRoute
   '/api/team/members': typeof ApiTeamMembersRoute
   '/api/team/session': typeof ApiTeamSessionRoute
   '/api/team/oidc/callback': typeof ApiTeamOidcCallbackRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/api/lab/$'
+    | '/api/team/audit'
     | '/api/team/members'
     | '/api/team/session'
     | '/api/team/oidc/callback'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/api/lab/$'
+    | '/api/team/audit'
     | '/api/team/members'
     | '/api/team/session'
     | '/api/team/oidc/callback'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/api/lab/$'
+    | '/api/team/audit'
     | '/api/team/members'
     | '/api/team/session'
     | '/api/team/oidc/callback'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiLabSplatRoute: typeof ApiLabSplatRoute
+  ApiTeamAuditRoute: typeof ApiTeamAuditRoute
   ApiTeamMembersRoute: typeof ApiTeamMembersRoute
   ApiTeamSessionRoute: typeof ApiTeamSessionRoute
   ApiTeamOidcCallbackRoute: typeof ApiTeamOidcCallbackRoute
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/api/lab/$'
       fullPath: '/api/lab/$'
       preLoaderRoute: typeof ApiLabSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/audit': {
+      id: '/api/team/audit'
+      path: '/api/team/audit'
+      fullPath: '/api/team/audit'
+      preLoaderRoute: typeof ApiTeamAuditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/team/members': {
@@ -178,6 +198,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiLabSplatRoute: ApiLabSplatRoute,
+  ApiTeamAuditRoute: ApiTeamAuditRoute,
   ApiTeamMembersRoute: ApiTeamMembersRoute,
   ApiTeamSessionRoute: ApiTeamSessionRoute,
   ApiTeamOidcCallbackRoute: ApiTeamOidcCallbackRoute,

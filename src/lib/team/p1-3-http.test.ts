@@ -23,6 +23,7 @@ const root = join(here, "../../..");
 const LAB_SQL = readFileSync(join(root, "migrations/0002_lab_revoke.sql"), "utf8");
 const TEAM_SQL = readFileSync(join(root, "migrations/0003_team_isolation.sql"), "utf8");
 const OIDC_SQL = readFileSync(join(root, "migrations/0004_team_oidc_sessions.sql"), "utf8");
+const AUDIT_SQL = readFileSync(join(root, "migrations/0005_team_audit.sql"), "utf8");
 const SECRET = "test-bootstrap-secret-1";
 const ENV = {
   CLAIMFORGE_TEAM_OIDC_ISSUER: "https://idp-rbac.example",
@@ -42,6 +43,7 @@ async function openSql() {
   await pg.exec(LAB_SQL);
   await pg.exec(TEAM_SQL);
   await pg.exec(OIDC_SQL);
+  await pg.exec(AUDIT_SQL);
   return { pg, sql: wrapPglite(pg as never) };
 }
 

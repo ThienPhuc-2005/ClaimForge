@@ -21,6 +21,7 @@ import {
   assertCapability,
   reviewIncludesAcceptedRisk,
 } from "./rbac.ts";
+import { appendAuditEvent, rejectCallerAuditSpoof } from "./audit.ts";
 import type {
   CollabWrite,
   TeamCollab,
@@ -37,6 +38,7 @@ export {
   resolveTenantContext,
   resolveTenantContextBySlug,
 } from "./context.ts";
+export { listAudit } from "./audit.ts";
 
 type TenantRow = {
   id: string;
@@ -160,23 +162,32 @@ export async function addMember(
   const ident = await requireActiveMember(sql, ctx);
   assertCapability(ident.role, "manageMembers");
   rejectCallerTenantId(input);
+  rejectCallerAuditSpoof(input);
   const userKey = requireUserKey(input.userKey);
   const role = requireRole(input.role);
   assertCanAssignRole(ident.role, role);
-  try {
-    await sql.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
-      ident.tenantId,
-      userKey,
-      role,
-    ]);
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    if (code === "23505") throw new TeamValidationError("member already exists");
-    throw err;
-  }
-  const member = await loadMember(sql, ident.tenantId, userKey);
-  if (!member) throw new TeamNotFoundError("not found");
-  return member;
+  return sql.transaction(async (tx) => {
+    try {
+      await tx.query("INSERT INTO team_member (tenant_id, user_key, role) VALUES ($1, $2, $3)", [
+        ident.tenantId,
+        userKey,
+        role,
+      ]);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "23505") throw new TeamValidationError("member already exists");
+      throw err;
+    }
+    const member = await loadMember(tx, ident.tenantId, userKey);
+    if (!member) throw new TeamNotFoundError("not found");
+    await appendAuditEvent(tx, ctx, {
+      action: "member.add",
+      targetKind: "member",
+      targetId: userKey,
+      detail: { role },
+    });
+    return member;
+  });
 }
 
 export async function updateMemberRole(
@@ -187,6 +198,7 @@ export async function updateMemberRole(
   const ident = await requireActiveMember(sql, ctx);
   assertCapability(ident.role, "manageMembers");
   rejectCallerTenantId(input);
+  rejectCallerAuditSpoof(input);
   const userKey = requireUserKey(input.userKey);
   const role = requireRole(input.role);
   assertCanAssignRole(ident.role, role);
@@ -196,14 +208,22 @@ export async function updateMemberRole(
   if (existing.role === "owner" && (await countOwners(sql, ident.tenantId)) <= 1) {
     throw new TeamForbiddenError("forbidden");
   }
-  await sql.query("UPDATE team_member SET role = $3 WHERE tenant_id = $1 AND user_key = $2", [
-    ident.tenantId,
-    userKey,
-    role,
-  ]);
-  const member = await loadMember(sql, ident.tenantId, userKey);
-  if (!member) throw new TeamNotFoundError("not found");
-  return member;
+  return sql.transaction(async (tx) => {
+    await tx.query("UPDATE team_member SET role = $3 WHERE tenant_id = $1 AND user_key = $2", [
+      ident.tenantId,
+      userKey,
+      role,
+    ]);
+    const member = await loadMember(tx, ident.tenantId, userKey);
+    if (!member) throw new TeamNotFoundError("not found");
+    await appendAuditEvent(tx, ctx, {
+      action: "member.role",
+      targetKind: "member",
+      targetId: userKey,
+      detail: { fromRole: existing.role, toRole: role },
+    });
+    return member;
+  });
 }
 
 export async function removeMember(sql: TeamSql, ctx: TenantContext, userKeyRaw: string): Promise<void> {
@@ -216,11 +236,19 @@ export async function removeMember(sql: TeamSql, ctx: TenantContext, userKeyRaw:
   if (existing.role === "owner" && (await countOwners(sql, ident.tenantId)) <= 1) {
     throw new TeamForbiddenError("forbidden");
   }
-  const rows = await sql.query<{ user_key: string }>(
-    "DELETE FROM team_member WHERE tenant_id = $1 AND user_key = $2 RETURNING user_key",
-    [ident.tenantId, userKey],
-  );
-  if (!rows[0]) throw new TeamNotFoundError("not found");
+  await sql.transaction(async (tx) => {
+    const rows = await tx.query<{ user_key: string }>(
+      "DELETE FROM team_member WHERE tenant_id = $1 AND user_key = $2 RETURNING user_key",
+      [ident.tenantId, userKey],
+    );
+    if (!rows[0]) throw new TeamNotFoundError("not found");
+    await appendAuditEvent(tx, ctx, {
+      action: "member.remove",
+      targetKind: "member",
+      targetId: userKey,
+      detail: { role: existing.role },
+    });
+  });
 }
 
 export async function createWorkspace(
@@ -231,18 +259,27 @@ export async function createWorkspace(
   const ident = await requireActiveMember(sql, ctx);
   assertCapability(ident.role, "mutateWorkspace");
   rejectCallerTenantId(input);
+  rejectCallerAuditSpoof(input);
   const name = requireName(input.name);
-  const id = randomUUID();
-  await sql.query(
-    "INSERT INTO team_workspace (tenant_id, id, name, created_by_user_key) VALUES ($1, $2, $3, $4)",
-    [ident.tenantId, id, name, ident.userKey],
-  );
-  const rows = await sql.query<WorkspaceRow>(
-    "SELECT tenant_id, id, name, created_by_user_key, created_at FROM team_workspace WHERE tenant_id = $1 AND id = $2",
-    [ident.tenantId, id],
-  );
-  if (!rows[0]) throw new TeamNotFoundError("not found");
-  return mapWorkspace(rows[0]);
+  return sql.transaction(async (tx) => {
+    const id = randomUUID();
+    await tx.query(
+      "INSERT INTO team_workspace (tenant_id, id, name, created_by_user_key) VALUES ($1, $2, $3, $4)",
+      [ident.tenantId, id, name, ident.userKey],
+    );
+    const rows = await tx.query<WorkspaceRow>(
+      "SELECT tenant_id, id, name, created_by_user_key, created_at FROM team_workspace WHERE tenant_id = $1 AND id = $2",
+      [ident.tenantId, id],
+    );
+    if (!rows[0]) throw new TeamNotFoundError("not found");
+    await appendAuditEvent(tx, ctx, {
+      action: "workspace.create",
+      targetKind: "workspace",
+      targetId: id,
+      detail: { name },
+    });
+    return mapWorkspace(rows[0]);
+  });
 }
 
 async function loadWorkspace(sql: TeamSql, ident: BoundIdentity, workspaceId: string): Promise<TeamWorkspace> {
@@ -272,11 +309,19 @@ export async function listWorkspaces(sql: TeamSql, ctx: TenantContext): Promise<
 export async function deleteWorkspace(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<void> {
   const ident = await requireActiveMember(sql, ctx);
   assertCapability(ident.role, "mutateWorkspace");
-  const rows = await sql.query<{ id: string }>(
-    "DELETE FROM team_workspace WHERE tenant_id = $1 AND id = $2 RETURNING id",
-    [ident.tenantId, workspaceId],
-  );
-  if (!rows[0]) throw new TeamNotFoundError("not found");
+  await sql.transaction(async (tx) => {
+    const rows = await tx.query<{ id: string }>(
+      "DELETE FROM team_workspace WHERE tenant_id = $1 AND id = $2 RETURNING id",
+      [ident.tenantId, workspaceId],
+    );
+    if (!rows[0]) throw new TeamNotFoundError("not found");
+    await appendAuditEvent(tx, ctx, {
+      action: "workspace.delete",
+      targetKind: "workspace",
+      targetId: workspaceId,
+      detail: {},
+    });
+  });
 }
 
 export async function getCollab(sql: TeamSql, ctx: TenantContext, workspaceId: string): Promise<TeamCollab | null> {
@@ -298,6 +343,7 @@ export async function updateWorkspaceCollab(
   const ident = await requireActiveMember(sql, ctx);
   assertCapability(ident.role, "mutateWorkspace");
   rejectCallerTenantId(write);
+  rejectCallerAuditSpoof(write);
   const safe = assertAllowedCollab(write);
   if (reviewIncludesAcceptedRisk(safe.review ?? undefined)) {
     assertCapability(ident.role, "acceptRisk");
@@ -309,9 +355,15 @@ export async function updateWorkspaceCollab(
   const policyJson = touchPolicy ? (safe.policy === null ? null : JSON.stringify(safe.policy)) : null;
   const reviewJson = touchReview ? (safe.review === null ? null : JSON.stringify(safe.review)) : null;
   const reportJson = touchReport ? (safe.reportDto === null ? null : JSON.stringify(safe.reportDto)) : null;
+  const fields = [
+    ...(touchPolicy ? (["policy"] as const) : []),
+    ...(touchReview ? (["review"] as const) : []),
+    ...(touchReport ? (["report"] as const) : []),
+  ];
 
-  const rows = await sql.query<CollabRow>(
-    `INSERT INTO team_workspace_collab (
+  return sql.transaction(async (tx) => {
+    const rows = await tx.query<CollabRow>(
+      `INSERT INTO team_workspace_collab (
       tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key
     ) VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (tenant_id, workspace_id) DO UPDATE SET
@@ -321,18 +373,27 @@ export async function updateWorkspaceCollab(
       updated_by_user_key = EXCLUDED.updated_by_user_key,
       updated_at = CURRENT_TIMESTAMP
     RETURNING tenant_id, workspace_id, policy_json, review_json, report_dto_json, updated_by_user_key, updated_at`,
-    [
-      ident.tenantId,
-      workspaceId,
-      policyJson,
-      reviewJson,
-      reportJson,
-      ident.userKey,
-      touchPolicy,
-      touchReview,
-      touchReport,
-    ],
-  );
-  if (!rows[0]) throw new TeamNotFoundError("not found");
-  return mapCollab(rows[0]);
+      [
+        ident.tenantId,
+        workspaceId,
+        policyJson,
+        reviewJson,
+        reportJson,
+        ident.userKey,
+        touchPolicy,
+        touchReview,
+        touchReport,
+      ],
+    );
+    if (!rows[0]) throw new TeamNotFoundError("not found");
+    if (fields.length > 0) {
+      await appendAuditEvent(tx, ctx, {
+        action: "collab.update",
+        targetKind: "collab",
+        targetId: workspaceId,
+        detail: { fields: [...fields] },
+      });
+    }
+    return mapCollab(rows[0]);
+  });
 }

@@ -1,3 +1,11 @@
+## 2026-09-01 — P1.4 append-only audit started
+
+- Branch `feat/p1.4-audit` from `origin/main` `944f81b`. Draft only. Do not merge P1.4 from this session.
+- Additive `0005_team_audit.sql`: no IP/UA columns, no member FK, UPDATE rejected.
+- Kernel logs member/workspace/collab mutations in the same transaction. Actor is live `team_member.role`.
+- `GET /api/team/audit` session-bound. Closed detail shapes; no capture/JWKS. ADR-037.
+- Next: wait for CI on the draft PR. P1.5 only if asked.
+
 ## 2026-09-01 — P1.3 merged; A3 lab; handoff
 
 - Squash-merged PR #3 into `main` as `4cefe02`. CI run 34 green.

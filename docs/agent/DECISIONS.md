@@ -97,7 +97,20 @@ P1.1 prevents cross-tenant access regardless of role. Role enum exists on `team_
 
 ## ADR-023 — Audit must not store raw or unsalted IP hashes
 
-Deferred to P1.4. If IP is logged at all, use HMAC with a rotating server key, never `sha256(ip)` and never raw IP. P1.1 has no audit table.
+P1.4 omits client IP and User-Agent entirely. Do not add `ip`, `ip_hash`, or `user_agent` columns, and do not persist `sha256(ip)` in `detail_json`. If a later slice needs network forensics, use `HMAC(ip, rotating_server_key)` with rotation and never store raw IP beside it.
+
+## ADR-037 — P1.4 audit is append-only, tenant-scoped, and actor-live
+
+Locked for the P1.4 epic:
+
+- Additive migration `0005_team_audit.sql`. Does not rewrite 0003 or 0004.
+- Rows record who changed whose membership, workspace, or collab. Closed `detail_json` shapes only (`role` / `fromRole`+`toRole` / workspace `name` / collab `{fields}`). No capture bodies, no JWKS material, no JWT compact, no IP/UA (ADR-023).
+- Actor is the live `team_member` row from `requireActiveMember`, never a client `actorUserKey`, JWT `role`, or minted `ctx.role`.
+- No FK to `team_member`: deleting a member must not erase who-changed-what. Tenant CASCADE may drop rows with the tenant.
+- `UPDATE` is rejected (append-only trigger). Application has no delete-audit API. Mutations and the insert share one transaction so a failed write leaves no row.
+- Reads are tenant-scoped (`listAudit` / `GET /api/team/audit`). Same-tenant viewer+ may read. Caller `tenant_id` / actor fields are isolation errors. HTTP JSON omits `tenantId` and IP. Opaque HTTPS session only; Bearer JWT is 401.
+- Not Grok Better Auth. Collab HTTP remains P1.5. Team UI remains P1.6.
+
 
 ## ADR-024 — Future sessions are opaque tokens stored as hashes
 
