@@ -13,7 +13,9 @@ import {
   bootstrapTenant,
   createWorkspace,
   deleteWorkspace,
+  getCollab,
   listMembers,
+  listWorkspaces,
   removeMember,
   resolveTenantContext,
   updateMemberRole,
@@ -50,6 +52,8 @@ test("viewer cannot mutate workspace, policy, or membership", async () => {
   await assert.rejects(() => deleteWorkspace(sql, viewer, ws.id), TeamForbiddenError);
   await assert.rejects(() => addMember(sql, viewer, { userKey: "eve", role: "analyst" }), TeamForbiddenError);
   assert.equal((await listMembers(sql, viewer)).some((m) => m.userKey === "view"), true);
+  assert.equal((await listWorkspaces(sql, viewer)).length, 1);
+  assert.equal(await getCollab(sql, viewer, ws.id), null);
 });
 
 test("accepted-risk requires lead or above", async () => {

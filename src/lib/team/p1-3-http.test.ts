@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { unlockBootstrap } from "./context.ts";
 import { TEAM_SESSION_COOKIE } from "./cookie.ts";
+import { handleTeamSession } from "./oidc-http.ts";
 import {
   handleTeamMembersDelete,
   handleTeamMembersGet,
@@ -171,4 +172,81 @@ test("unauthenticated members routes are 401", async () => {
   const { sql } = await openSql();
   const res = await handleTeamMembersGet(req("GET", MEMBERS), { sql, env: ENV });
   assert.equal(res.status, 401);
+});
+
+test("analyst and lead cannot escalate via members HTTP", async () => {
+  const { sql } = await openSql();
+  const a = await ownerSession(sql);
+  await addMember(sql, a.context, { userKey: "ana", role: "analyst" });
+  await addMember(sql, a.context, { userKey: "lea", role: "lead" });
+  const analyst = await resolveTenantContext(sql, "ana", a.tenant.id);
+  const lead = await resolveTenantContext(sql, "lea", a.tenant.id);
+  const { token: anaTok } = await mintTeamSession(sql, analyst);
+  const { token: leaTok } = await mintTeamSession(sql, lead);
+  for (const token of [anaTok, leaTok]) {
+    const post = await handleTeamMembersPost(req("POST", MEMBERS, token, { userKey: "eve", role: "viewer" }), {
+      sql,
+      env: ENV,
+    });
+    assert.equal(post.status, 403);
+    const patch = await handleTeamMembersPatch(
+      req("PATCH", MEMBERS, token, { userKey: "ana", role: "admin" }),
+      { sql, env: ENV },
+    );
+    assert.equal(patch.status, 403);
+    const del = await handleTeamMembersDelete(req("DELETE", `${MEMBERS}?userKey=ana`, token), { sql, env: ENV });
+    assert.equal(del.status, 403);
+  }
+  const listed = await listMembers(sql, a.context);
+  assert.equal(listed.some((m) => m.userKey === "eve"), false);
+  assert.equal(listed.find((m) => m.userKey === "ana")?.role, "analyst");
+});
+
+test("viewer GET members is 200; session JSON still omits role", async () => {
+  const { sql } = await openSql();
+  const a = await ownerSession(sql);
+  await addMember(sql, a.context, { userKey: "view", role: "viewer" });
+  const viewer = await resolveTenantContext(sql, "view", a.tenant.id);
+  const { token } = await mintTeamSession(sql, viewer);
+  const members = await handleTeamMembersGet(req("GET", MEMBERS, token), { sql, env: ENV });
+  assert.equal(members.status, 200);
+  const body = (await members.json()) as { members: Array<{ userKey: string; role: string }> };
+  assert.ok(body.members.some((m) => m.userKey === "alice" && m.role === "owner"));
+  const session = await handleTeamSession(req("GET", "https://app.example/api/team/session", token), { sql, env: ENV });
+  assert.equal(session.status, 200);
+  const me = (await session.json()) as { userKey: string; tenantId: string; role?: unknown };
+  assert.equal(me.userKey, "view");
+  assert.equal("role" in me, false);
+});
+
+test("Bearer JWT is not a Team session; HTTP members is 400", async () => {
+  const { sql } = await openSql();
+  const jwtReq = new Request(MEMBERS, {
+    method: "GET",
+    headers: { authorization: "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.e30.sig", role: "owner" },
+  });
+  const jwt = await handleTeamMembersGet(jwtReq, { sql, env: ENV });
+  assert.equal(jwt.status, 401);
+  const a = await ownerSession(sql);
+  const http = await handleTeamMembersGet(
+    new Request("http://app.example/api/team/members", { headers: { cookie: cookieHeader(a.token) } }),
+    { sql, env: ENV },
+  );
+  assert.equal(http.status, 400);
+  assert.deepEqual(await http.json(), { error: "oidc requires HTTPS" });
+});
+
+test("unknown member delete is 404; invalid role is 400", async () => {
+  const { sql } = await openSql();
+  const a = await ownerSession(sql);
+  const missing = await handleTeamMembersDelete(req("DELETE", `${MEMBERS}?userKey=nobody`, a.token), {
+    sql,
+    env: ENV,
+  });
+  assert.equal(missing.status, 404);
+  const badRole = await handleTeamMembersPost(
+    req("POST", MEMBERS, a.token, { userKey: "eve", role: "superadmin" }),
+    { sql, env: ENV },
+  );
+  assert.equal(badRole.status, 400);
 });

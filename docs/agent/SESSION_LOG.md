@@ -1,4 +1,10 @@
+## 2026-09-01 — P1.3-R1 extra RBAC HTTP cases
+
+- Extra tests: analyst/lead cannot escalate via members HTTP; viewer GET 200; session JSON still omits role; Bearer JWT is 401; HTTP URL is 400; unknown delete 404; invalid role 400; viewer still reads workspace/collab.
+- CI run 32 on `3c8201b` was already green; this is additional coverage. Draft kept. Do not merge.
+
 ## 2026-09-01 — P1.2 merged; P1.3 RBAC HTTP started
+
 
 - Squash-merged PR #2 into `main` as `6de17a4` after A1 20/20 and A2 26/26 (Chromium + Firefox cookie jars, PostgreSQL `token_hash` only, membership CASCADE).
 - Started `feat/p1.3-rbac-http`: live member-row RBAC, members HTTP, ADR-036. Draft only. Do not merge P1.3 from this session.

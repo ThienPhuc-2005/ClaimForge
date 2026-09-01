@@ -590,6 +590,30 @@ export const P1_GATES: P1Gate[] = [
     after: "Viewer session is 403; body tenant_id rejected; no JWT role",
     evidenceTest: "p1-3-http.test.ts:viewer POST /api/team/members is 403",
   },
+  {
+    id: "P1.3-http-analyst-no-escalate",
+    p1: "P1.3",
+    bug: "Analyst or lead session could add members or self-promote",
+    before: "Members HTTP trusted any active session",
+    after: "POST/PATCH/DELETE members is 403 below admin; role stays analyst",
+    evidenceTest: "p1-3-http.test.ts:analyst and lead cannot escalate via members HTTP",
+  },
+  {
+    id: "P1.3-session-omits-role",
+    p1: "P1.3",
+    bug: "GET /api/team/session leaked role for the client to spoof later",
+    before: "Session JSON included role from the minted context",
+    after: "Session remains {userKey,tenantId}; members list is the role source",
+    evidenceTest: "p1-3-http.test.ts:viewer GET members is 200; session JSON still omits role",
+  },
+  {
+    id: "P1.3-no-bearer-jwt",
+    p1: "P1.3",
+    bug: "Authorization Bearer JWT or HTTP URL authenticated Team members",
+    before: "A role=owner header or cleartext cookie was enough",
+    after: "Only the opaque HTTPS session cookie; Bearer is 401; HTTP is 400",
+    evidenceTest: "p1-3-http.test.ts:Bearer JWT is not a Team session; HTTP members is 400",
+  },
 ];
 
 export function gatesFor(p1: P1Item): P1Gate[] {
