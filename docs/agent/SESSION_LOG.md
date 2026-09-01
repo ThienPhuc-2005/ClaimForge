@@ -1,11 +1,17 @@
+## 2026-09-01 — handoff for a new chat (drafts held)
+
+- User pick **1 = giữ PR nháp**. Did not merge #4/#5/#6. Did not start capture-share.
+- Live handoff is this branch `feat/p1.6-team-ui` (not `main` `944f81b`, which still says P1.4 not started).
+- Stack: P1.4 `83059bb` PR #4 CI run 36; P1.5 `9e3c4ee` PR #5 CI run 37; P1.6 `914eb27` PR #6 CI run 39. All draft, all green.
+- Next agent: clone GitHub, checkout `feat/p1.6-team-ui`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.6. Merge only if the user picks merge.
+
 ## 2026-09-01 — P1.6 Team UI started
 
 - Branch `feat/p1.6-team-ui` from `feat/p1.5-collab-http` `9e3c4ee` (PR #5 still draft). Draft only. Do not merge P1.6 from this session.
 - More → Team inspect view. Slug sign-in, members, workspaces, push/pull collab, audit. ADR-039.
 - Role from members list. No tenant list. Loot/replay copy documented as local (ADR-027). Callback opens `/?team=1`.
 - Local gates: typecheck, lint, `npm test` 509 / 505 pass / 4 skip / 0 fail, audit 0 high, build pass.
-- Draft [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6). Next: wait for CI. Do not start capture-share unless asked.
-
+- Draft [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6). CI run 39 green. Do not start capture-share unless asked.
 
 ## 2026-09-01 — P1.5 collab HTTP started
 
