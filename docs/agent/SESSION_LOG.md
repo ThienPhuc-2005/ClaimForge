@@ -1,3 +1,10 @@
+## 2026-09-01 — A-lab P1.4–P1.6 (sandbox-only)
+
+- User pick **2 = Lab A Team** (typed `22`). Did not start capture-share. No product commit.
+- Chromium cookie jar + real Postgres 16: **27/27 pass** (session omits role; Bearer JWT 401; HTTP 400; `token_hash` is SHA-256; audit omits tenantId/IP; viewer/analyst/lead RBAC on collab; cross-tenant 404; capture rejected; loot/replay projected; admin cannot assign owner; last owner stays; member delete keeps audit; `team_audit` UPDATE rejected; More → Team inspect).
+- Firefox did not launch in this sandbox (missing GTK). Counted as skip, not a product fail.
+- Next agent: clone GitHub, checkout `main`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.6.
+
 ## 2026-09-01 — hold main after P1.4–P1.6 merge
 
 - User pick **1 = giữ `main`**. Did not start A-lab. Did not start capture-share. No product commit after squash `1be6d07`.

@@ -13,7 +13,7 @@ This is **not** a new App Builder scaffold. The product is **ClaimForge** at `Th
 | `main` product (P1.4–P1.6 squash) | `1be6d07` | merged [#6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6); [#4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4)/[#5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5) closed as superseded | [run 41](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33500312474) success |
 | Prior `main` (P1.3 + docs) | `944f81b` | — | [run 35](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33456608096) |
 
-User pick **1 = giữ `main`** (2026-09-01, after merge). Do not start A-lab or capture-share unless they pick it. This file on `main` is the live handoff.
+User pick **2 = Lab A Team** (2026-09-01, typed `22`). Do not start capture-share unless they name it. This file on `main` is the live handoff.
 
 If the user says **tiếp** after a picker: that means continue the **in-progress slice**, not start encrypted capture share. There is **no in-progress slice**. Default is keep-`main`. Do not auto-start the next epic.
 
@@ -21,9 +21,9 @@ If the user says **tiếp** after a picker: that means continue the **in-progres
 
 1. **Repo:** `ThienPhuc-2005/ClaimForge`. Working tree on `main` is clean except an untracked `node_modules` symlink in some sandboxes — never commit it.
 2. **Milestone:** v0.9 Core Hardening. **P0 + P1.0–P1.6 merged** to `main`.
-3. **Done on main:** P0.1–P0.8. P1.1 isolation kernel. P1.2 OIDC + opaque sessions + operator CLI. P1.3 live `team_member.role` RBAC + session-bound `/api/team/members` (A3 lab 36/36, sandbox-only). P1.4 append-only audit (`0005`, ADR-037). P1.5 session-bound collab HTTP (ADR-038). P1.6 More → Team inspect view (ADR-039). Tests: **509 / 505 pass / 4 skip / 0 fail** (GitHub checkout).
+3. **Done on main:** P0.1–P0.8. P1.1 isolation kernel. P1.2 OIDC + opaque sessions + operator CLI. P1.3 live `team_member.role` RBAC + session-bound `/api/team/members` (A3 lab 36/36, sandbox-only). P1.4 append-only audit (`0005`, ADR-037). P1.5 session-bound collab HTTP (ADR-038). P1.6 More → Team inspect view (ADR-039). Tests: **509 / 505 pass / 4 skip / 0 fail** (GitHub checkout). P1.4–P1.6 A-lab Chromium+Postgres 27/27 (sandbox-only; Firefox skipped).
 4. **P1.6 product:** Solo stays the default desk. Team is **More → Team**, not a primary tab. Slug sign-in (`GET /api/team/oidc/login?slug=`). No tenant list. Session JSON `{userKey, tenantId}` — **no role**; live role comes from the members list. Push policy/review/ReportDTO; kernel still projects loot/replay. Pull applies policy + review, does not restore captures. Loot/replay copy in the tab is local (ADR-027). Callback opens `/?team=1`. Client is `src/lib/team/client.ts` (same-origin cookie, never sends `tenant_id`).
-5. **Not done:** encrypted capture share, tenant listing, IdP logout, OIDC discovery, JIT, Postgres RLS claim, HMAC-IP. No A-lab for P1.4–P1.6 (unlike P1.3).
+5. **Not done:** encrypted capture share, tenant listing, IdP logout, OIDC discovery, JIT, Postgres RLS claim, HMAC-IP. P1.4–P1.6 A-lab ran (sandbox-only, not in git): Chromium cookie jar + real Postgres **27/27**. Firefox could not launch in this sandbox (GTK).
 6. **Invariants (do not break):**
    - `VITE_AUTH_ENABLED=false`. Team must not import `authMiddleware` / `requireUserId` / `@/lib/auth/server`.
    - No raw HAR / JWT compact / cookie / credentials persist. Collab is policy + review + Team ReportDTO projection (`loot.value` and `replays.raw`/`curl` = `[redacted]`).
@@ -40,7 +40,7 @@ If the user says **tiếp** after a picker: that means continue the **in-progres
    - Talk to the user in **Vietnamese**, product terms (no ports/paths/`localhost`/tool names unless they ask).
    - **Every time you finish a slice, end with a short numbered command picker** (what it does + whether it increases bug-finding). Wait for them to pick. Do not auto-start the next epic.
    - Propose a default pick; do not force them to invent the next epic.
-8. **Next step:** user picked **giữ `main`**. Do not start A-lab or capture-share unless they name it.
+8. **Next step:** user picked **Lab A Team**; it ran. Default is keep-`main`. Do not start capture-share unless they name it.
 
 ## Key paths
 
