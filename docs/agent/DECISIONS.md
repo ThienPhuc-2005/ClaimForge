@@ -170,3 +170,15 @@ P1.2-R3:
 - Fail-closed on missing input/env, missing `team_tenant`/`team_member`, or duplicate slug.
 - Procedure: `docs/operator/BOOTSTRAP.md`. Still no JIT, no Better Auth, no P1.3.
 
+## ADR-036 — P1.3 RBAC uses the live member row, never JWT or ctx.role
+
+Locked for the P1.3 epic:
+
+- Authority is `team_member.role` from `requireActiveMember` (re-SELECT). Minted `ctx.role` and ID token `role` claims are not consulted.
+- Rank: viewer < analyst < lead < admin < owner. Viewer is read-only. Workspace/policy/report writes are analyst+. `accepted-risk` in a Team review map is lead+. Member add/role/remove is admin+.
+- `owner` cannot be assigned after bootstrap. The last owner cannot be removed or demoted. Admin manages strictly lower ranks only.
+- Same-tenant denials are `TeamForbiddenError` (HTTP 403). Missing/cross-tenant stay `TeamNotFoundError` (no existence leak).
+- Members HTTP: `GET/POST/PATCH/DELETE /api/team/members` bound to the opaque session tenant. No `tenant_id` in body. No tenant list. `GET /api/team/session` still omits role. JWT is not an input.
+- Server RBAC may refuse to persist or return loot/replay; it does not control in-browser copy (ADR-027). Collab HTTP remains P1.5.
+
+

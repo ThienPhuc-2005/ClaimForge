@@ -1,5 +1,6 @@
 - **P1.2 remaining:** Customer OIDC + opaque sessions implemented, not merged. First tenant is operator CLI only (`npm run team:bootstrap`); no HTTP bootstrap, no tenant list, no IdP (RP-initiated) logout, no OIDC discovery, no JIT provisioning. `__Host-` cookie requires HTTPS (request URL; `X-Forwarded-Proto` only if `CLAIMFORGE_TEAM_TRUST_PROXY`, and that flag is only safe when a trusted reverse proxy strips/overwrites the client header). Session GET/logout fail-closed if OIDC env is missing. Login does not confirm tenant existence. Pending table is capped (256) with consume-delete and expiry sweep. PGLite proves schema + repo; Neon/Postgres RLS is not claimed. Operator CLI refuses PGLite and requires `DATABASE_URL`.
-- **P1.1 remaining:** Kernel still has no collab HTTP, UI, or audit table. Team persist is a projection (loot/replay blobs always `[redacted]`), not encryption. Server RBAC cannot control in-browser loot/replay export.
+- **P1.3 remaining:** Members HTTP is API-only (no Team UI). Collab HTTP is P1.5. Audit is P1.4. Server RBAC cannot control in-browser loot/replay export.
+
 - **P0.6 remaining (low):** DNS rebinding is not fully solvable in-browser; fetch cannot pin resolved IPs across redirects. Team OIDC reuses the same gate.
 - **P0.2 remaining (low):** PDF is paginated Helvetica 1.4, not a designed layout. Good enough for canaries and offline share; visual polish is P3.
 - **Prod preview CSP (low):** `connect-src` includes `http://[::1]:*`, which Chromium ignores as an invalid source. Content matches dev; not a remainder regression.

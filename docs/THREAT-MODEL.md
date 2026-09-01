@@ -89,7 +89,7 @@ An attacker must not:
 
 The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque token in transit; only its SHA-256 is stored. Logout revokes that local session only — it does not call the IdP. DNS rebinding remains a known P0.6 residual (fetch cannot pin resolved IPs).
 
-P1.2 does not list tenants, enforce RBAC (P1.3), or persist collab over HTTP (P1.5).
+P1.3 enforces RBAC from the live `team_member.role` (viewer read-only; `accepted-risk` lead+; members HTTP admin+). It does not persist collab over HTTP (P1.5) or list tenants.
 
 ## Limitations
 
