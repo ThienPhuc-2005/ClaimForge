@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4 (append-only audit) is on `feat/p1.4-audit` (draft PR; not merged). P1.5+ (collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4 (append-only audit) is on `feat/p1.4-audit` (draft PR #4; not merged). P1.5 (collab HTTP) is on `feat/p1.5-collab-http` stacked on P1.4 (draft PR; not merged). P1.6 UI stays out of scope until explicitly requested.
 
 **Decided 2026-08-30:**
 
@@ -180,7 +180,7 @@ Append-only `team_audit`. Who changed whose collab/membership/workspace. No capt
 
 Role on the **member row** is authoritative. A JWT `role=admin` claim is not. Viewer cannot mutate. `accepted-risk` requires lead+. Admin+ may add/change/remove members; `owner` is bootstrap-only; the last owner cannot be removed or demoted. Members HTTP is session-bound (`GET/POST/PATCH/DELETE /api/team/members`). Server may refuse to persist loot/replay; it does not control in-browser copy.
 
-Collab HTTP (policy/review/ReportDTO over HTTP) remains P1.5; the kernel already applies RBAC on `updateWorkspaceCollab`.
+Collab HTTP (policy/review/ReportDTO over HTTP) is P1.5; the kernel already applies RBAC and persist projection on `updateWorkspaceCollab`. Workspace list/create/delete HTTP is in the same slice because collab is per-workspace.
 
 ### Postgres RLS
 
@@ -234,4 +234,14 @@ Out of scope for that slice: P1.4 audit, P1.5 collab HTTP, P1.6 UI.
 - P1.4 gates in `p1-gates.ts` and `p1-4-audit.test.ts` / `p1-4-http.test.ts`
 
 Out of scope: P1.5 collab HTTP, P1.6 UI, HMAC-IP, tenant listing.
+
+## 13. P1.5 deliverable
+
+- ADR-038
+- Session-bound `GET/POST/DELETE /api/team/workspaces` and `GET/PATCH /api/team/collab`
+- Persist allowlist and RBAC stay in the kernel (`assertAllowedCollab`, live `team_member.role`)
+- Viewer GET; analyst+ writes; `accepted-risk` lead+; missing/cross-tenant 404; caller `tenant_id` 400
+- P1.5 gates in `p1-gates.ts` and `p1-5-http.test.ts`
+
+Out of scope: P1.6 Team UI, HMAC-IP, tenant listing, capture upload.
 

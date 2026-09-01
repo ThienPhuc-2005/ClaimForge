@@ -1,7 +1,7 @@
 /**
- * P1 catalog: each isolation / OIDC / RBAC / audit invariant has a test that would fail if the fix is reverted.
+ * P1 catalog: each isolation / OIDC / RBAC / audit / collab-HTTP invariant has a test that would fail if the fix is reverted.
  */
-export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4"] as const;
+export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5"] as const;
 export type P1Item = (typeof P1_ITEMS)[number];
 
 export interface P1Gate {
@@ -695,6 +695,79 @@ export const P1_GATES: P1Gate[] = [
     after: "Opaque HTTPS session only; spoof query 400; public events omit tenantId and IP",
     evidenceTest:
       "p1-4-http.test.ts:GET /api/team/audit is session-bound; tenant_id/actor query rejected; JSON omits tenantId and IP",
+  },
+  {
+    id: "P1.5-http-session",
+    p1: "P1.5",
+    bug: "Collab HTTP accepted Bearer JWT or unauthenticated GET",
+    before: "No collab route; kernel writes were the only persist path",
+    after: "Opaque HTTPS session only; missing cookie is 401; JSON omits tenantId",
+    evidenceTest: "p1-5-http.test.ts:GET /api/team/collab is session-bound; tenant_id/actor query rejected",
+  },
+  {
+    id: "P1.5-cross-tenant-idor",
+    p1: "P1.5",
+    bug: "Knowing a workspace UUID read or wrote another tenant's collab over HTTP",
+    before: "GET/PATCH /api/team/collab?workspaceId=victim returned or mutated A",
+    after: "Cross-tenant GET/PATCH is 404 not-found; victim row unchanged",
+    evidenceTest: "p1-5-http.test.ts:cross-tenant collab GET/PATCH is 404; victim row unchanged",
+  },
+  {
+    id: "P1.5-viewer-no-mutate",
+    p1: "P1.5",
+    bug: "Viewer session could POST workspaces or PATCH collab",
+    before: "Any active session wrote policy/review",
+    after: "Viewer GET is 200; workspace/collab writes are 403",
+    evidenceTest: "p1-5-http.test.ts:viewer GET collab is 200; viewer workspace/collab writes are 403",
+  },
+  {
+    id: "P1.5-accepted-risk-lead",
+    p1: "P1.5",
+    bug: "Analyst PATCH review accepted-risk succeeded over HTTP",
+    before: "Collab HTTP trusted any analyst session for every ReviewState",
+    after: "Policy write is analyst+; accepted-risk is live lead+",
+    evidenceTest: "p1-5-http.test.ts:analyst PATCH policy is 200; accepted-risk requires lead",
+  },
+  {
+    id: "P1.5-no-tenant-id",
+    p1: "P1.5",
+    bug: "Caller tenant_id on workspace/collab body or query switched tenant",
+    before: "POST workspaces {tenant_id} or PATCH collab tenantId scoped SQL",
+    after: "Caller tenant_id/actor fields are isolation errors (HTTP 400)",
+    evidenceTest: "p1-5-http.test.ts:caller tenant_id on workspace/collab body is rejected",
+  },
+  {
+    id: "P1.5-no-capture-persist",
+    p1: "P1.5",
+    bug: "HTTP collab stored aRaw or compact JWT in report_dto_json",
+    before: "PATCH reportDto bypassed the kernel allowlist",
+    after: "assertAllowedCollab rejects capture secrets; stored row unchanged",
+    evidenceTest: "p1-5-http.test.ts:PATCH collab rejects capture secrets; stored row unchanged",
+  },
+  {
+    id: "P1.5-projection-loot",
+    p1: "P1.5",
+    bug: "GET collab returned live loot.value or replay raw/curl",
+    before: "HTTP JSON echoed the client reportDto",
+    after: "Response is the Team projection; loot/replay secrets are [redacted]",
+    evidenceTest: "p1-5-http.test.ts:GET collab returns Team projection; loot value is redacted",
+  },
+  {
+    id: "P1.5-no-bearer-jwt",
+    p1: "P1.5",
+    bug: "Authorization Bearer JWT or HTTP URL authenticated collab HTTP",
+    before: "A role=owner header or cleartext cookie was enough",
+    after: "Only the opaque HTTPS session cookie; Bearer is 401; HTTP is 400",
+    evidenceTest: "p1-5-http.test.ts:Bearer JWT is not a Team session; HTTP collab is 400",
+  },
+  {
+    id: "P1.5-tenant-list-workspaces",
+    p1: "P1.5",
+    bug: "GET /api/team/workspaces listed every tenant or leaked tenantId",
+    before: "Workspace list was unscoped or included tenant_id",
+    after: "List is the session tenant only; public JSON omits tenantId",
+    evidenceTest:
+      "p1-5-http.test.ts:GET /api/team/workspaces lists the session tenant only; JSON omits tenantId",
   },
 ];
 

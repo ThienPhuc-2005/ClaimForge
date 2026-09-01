@@ -89,7 +89,7 @@ An attacker must not:
 
 The session cookie (`__Host-claimforge-team.session`) may carry the raw opaque token in transit; only its SHA-256 is stored. Logout revokes that local session only — it does not call the IdP. DNS rebinding remains a known P0.6 residual (fetch cannot pin resolved IPs).
 
-P1.3 enforces RBAC from the live `team_member.role` (viewer read-only; `accepted-risk` lead+; members HTTP admin+). It does not persist collab over HTTP (P1.5) or list tenants.
+P1.3 enforces RBAC from the live `team_member.role` (viewer read-only; `accepted-risk` lead+; members HTTP admin+). Collab HTTP is P1.5. It does not list tenants.
 
 ## Team mode (P1.4 — append-only audit)
 
@@ -102,6 +102,18 @@ Membership, workspace, and collab mutations append a tenant-scoped audit row. An
 - Leave an audit row for a mutation that rolled back.
 
 `GET /api/team/audit` uses the opaque session. JSON omits `tenantId` and IP. Viewer+ of that tenant may read. IP/UA are omitted rather than hashed (ADR-023).
+
+## Team mode (P1.5 — collab HTTP)
+
+Policy, review, and Team ReportDTO persist over the opaque session. Workspaces are listed/created/deleted on the same plane. An attacker must not:
+
+- Read or write another tenant's workspace/collab by sending `workspaceId` (IDOR) — missing and cross-tenant are 404.
+- Switch tenant via `tenant_id` / `tenantId` on body or query.
+- Persist capture secrets (`aRaw`, compact JWT, live loot/replay) — the kernel projection still runs; GET returns `[redacted]` loot/replay blobs.
+- Authenticate with a Bearer JWT or HTTP URL. Cross-origin mutations are 401.
+- Write as viewer, or persist `accepted-risk` below lead.
+
+Server RBAC still does not control in-browser loot/replay copy (ADR-027). Team UI is P1.6.
 
 ## Limitations
 

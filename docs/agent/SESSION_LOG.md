@@ -1,3 +1,10 @@
+## 2026-09-01 — P1.5 collab HTTP started
+
+- Branch `feat/p1.5-collab-http` from `feat/p1.4-audit` `83059bb` (PR #4 still draft). Draft only. Do not merge P1.5 from this session.
+- Session-bound `GET/POST/DELETE /api/team/workspaces` and `GET/PATCH /api/team/collab`. Kernel persist + live-role RBAC. ADR-038.
+- Viewer GET; analyst+ writes; accepted-risk lead+; cross-tenant 404; no tenant_id; loot/replay projected.
+- Next: wait for CI on the draft PR. P1.6 only if asked.
+
 ## 2026-09-01 — P1.4 append-only audit started
 
 - Branch `feat/p1.4-audit` from `origin/main` `944f81b`. Draft only. Do not merge P1.4 from this session.
