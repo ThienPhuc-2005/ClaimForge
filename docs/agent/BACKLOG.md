@@ -22,8 +22,8 @@
 | P1.1 | Tenant isolation kernel | done | `migrations/0003_team_isolation.sql`, `src/lib/team/*`. Frozen WeakMap `TenantContext`; `requireActiveMember`; Team ReportDTO projection. Adversarial tests + `p1-gates.ts`. No HTTP. |
 | P1.2 | Customer OIDC + opaque sessions | done | `migrations/0004_team_oidc_sessions.sql`, `src/lib/team/oidc-*.ts`, `session.ts`, `/api/team/oidc/*`, `/api/team/session`. Env IdP, PKCE S256, hashed+sealed pending, tenant-bound opaque sessions, no JIT. Operator CLI `npm run team:bootstrap`. ADR-034/035. Not Grok Better Auth. Merged PR #2 squash `6de17a4`. |
 | P1.3 | RBAC on Team APIs | done | Live `team_member.role`. Viewer read-only. `accepted-risk` lead+. Admin+ `/api/team/members`. ADR-036. Merged PR #3 squash `4cefe02`. A3 lab 36/36 (Chrome+Firefox+Postgres). Server cannot claim in-browser export control. |
-| P1.4 | Append-only audit | done | `migrations/0005_team_audit.sql`, `src/lib/team/audit.ts`, `GET /api/team/audit`. Omit IP/UA (ADR-023). Live member actor. Member delete does not erase rows. ADR-037. Draft on `feat/p1.4-audit`; not merged. |
-| P1.5 | Collab HTTP for policy/review/ReportDTO | done | Session-bound workspaces + collab HTTP. Kernel persist/RBAC. ADR-038. Draft on `feat/p1.5-collab-http` stacked on P1.4; not merged. |
-| P1.6 | Team UI | done | More → Team over the session. ADR-039. Draft on `feat/p1.6-team-ui` stacked on P1.5; not merged. |
+| P1.4 | Append-only audit | done | `migrations/0005_team_audit.sql`, `src/lib/team/audit.ts`, `GET /api/team/audit`. Omit IP/UA (ADR-023). Live member actor. Member delete does not erase rows. ADR-037. Squash-merged in PR #6 `1be6d07`. |
+| P1.5 | Collab HTTP for policy/review/ReportDTO | done | Session-bound workspaces + collab HTTP. Kernel persist/RBAC. ADR-038. Squash-merged in PR #6 `1be6d07`. |
+| P1.6 | Team UI | done | More → Team over the session. ADR-039. Squash-merged in PR #6 `1be6d07`. |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029). |

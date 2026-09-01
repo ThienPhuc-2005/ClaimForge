@@ -1,3 +1,11 @@
+## 2026-09-01 — P1.4–P1.6 merged to main
+
+- User pick **2 = merge**. Squash-merged [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6) as `1be6d07` (`feat(p1.4-p1.6): audit, collab HTTP, and More Team inspect view (#6)`).
+- [#4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4) and [#5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5) closed as superseded (same stack). Did not merge them separately.
+- CI on `main` [run 41](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33500312474) green. Not a merge gate (ADR-029).
+- Did not start capture-share. Did not run an A-lab for P1.4–P1.6.
+- Next agent: clone GitHub, checkout `main`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.6.
+
 ## 2026-09-01 — handoff for a new chat (drafts held)
 
 - User pick **1 = giữ PR nháp**. Did not merge #4/#5/#6. Did not start capture-share.
