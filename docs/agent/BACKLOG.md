@@ -25,6 +25,6 @@
 | P1.4 | Append-only audit | done | `migrations/0005_team_audit.sql`, `src/lib/team/audit.ts`, `GET /api/team/audit`. Omit IP/UA (ADR-023). Live member actor. Member delete does not erase rows. ADR-037. Squash-merged in PR #6 `1be6d07`. A-lab Chromium+Postgres 27/27 (sandbox-only). |
 | P1.5 | Collab HTTP for policy/review/ReportDTO | done | Session-bound workspaces + collab HTTP. Kernel persist/RBAC. ADR-038. Squash-merged in PR #6 `1be6d07`. A-lab Chromium+Postgres 27/27 (sandbox-only). |
 | P1.6 | Team UI | done | More → Team over the session. ADR-039. Squash-merged in PR #6 `1be6d07`. A-lab Chromium+Postgres 27/27 (sandbox-only). |
-| P1.7 | Postgres RLS | in_progress | `0006_team_rls.sql` FORCE RLS + kernel GUC. ADR-040. Branch `feat/p1.7-rls`. Not merged. |
+| P1.7 | Postgres RLS | done | `0006_team_rls.sql` FORCE RLS + kernel GUC. ADR-040. Squash-merged in PR #7 `9cbd88d`. Dedicated Postgres test (non-superuser). PGLite does not enforce RLS. |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029). |

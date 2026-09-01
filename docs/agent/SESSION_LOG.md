@@ -1,4 +1,12 @@
+## 2026-09-01 — P1.7 merged to main
+
+- User pick **2 = merge P1.7**. Squash PR [#7](https://github.com/ThienPhuc-2005/ClaimForge/pull/7) → `9cbd88d`.
+- CI on merge: [run 33509604074](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33509604074) success (evidence, not a merge gate).
+- Did not start capture-share, JIT, tenant listing, HMAC-IP, IdP logout, or OIDC discovery.
+- Next agent: clone GitHub, checkout `main`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.7.
+
 ## 2026-09-01 — P1.7 Postgres RLS in progress
+
 
 - User asked to do remaining work. Did **not** start capture-share, JIT, tenant listing, HMAC-IP, or IdP logout (those stay out of scope / need a new threat model).
 - Slice: P1.7 `feat/p1.7-rls` — additive `0006_team_rls.sql`, kernel `SET LOCAL claimforge.tenant_id`, Postgres integration test (non-superuser). ADR-040.

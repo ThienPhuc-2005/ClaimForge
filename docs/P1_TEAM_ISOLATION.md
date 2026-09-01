@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.6 are on `main`. P1.7 (Postgres RLS) is in flight on `feat/p1.7-rls`. Encrypted capture share is not P1.
+**Status:** P1.0 accepted. P1.1–P1.7 are on `main` (P1.7 PR #7 `9cbd88d`). Encrypted capture share is not P1.
 
 **Decided 2026-08-30:**
 

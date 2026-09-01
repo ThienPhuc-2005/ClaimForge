@@ -1,11 +1,11 @@
-- **When:** P1.7 in progress on `feat/p1.7-rls` (not merged). P1.4–P1.6 remain on `main` `1be6d07`.
-- **Product SHA:** working tree on `feat/p1.7-rls` (this docs commit is with the slice).
-- **Commands (GitHub checkout of this branch):**
-  - `npm test` — **512 tests**. GitHub checkout: sandbox-doc tests skip (4). RLS Postgres test runs when `CLAIMFORGE_TEAM_RLS_DATABASE_URL` is set (CI service); otherwise it skips. This sandbox with the URL: **512 pass / 0 fail**.
+- **When:** P1.7 squash-merged to `main` (`9cbd88d`, PR #7).
+- **Product SHA:** `9cbd88d` (`git rev-parse HEAD` after this docs commit will differ; do not add a SHA-echo commit).
+- **Commands (GitHub checkout of `main`):**
+  - `npm test` — **512 tests**. Sandbox-doc tests skip (4) when `AGENTS.md` is absent. RLS Postgres test runs when `CLAIMFORGE_TEAM_RLS_DATABASE_URL` is set (CI service).
   - `npm run typecheck` → pass
   - `npm run lint` → pass
   - `npm run audit:deps` → 0 high
   - `npm run build` → pass
-- **CI (evidence, not a merge gate, ADR-029):** draft PR after push.
+- **CI (evidence, not a merge gate, ADR-029):** [run 33509604074](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33509604074) success on `9cbd88d`.
 - **Browser UI:** More → Team unchanged.
-- **A-lab:** P1.4–P1.6 Chromium+Postgres 27/27 still the last UI lab. P1.7 adds a dedicated Postgres RLS test, not a browser lab.
+- **A-lab:** P1.4–P1.6 Chromium+Postgres 27/27 still the last UI lab. P1.7 is a dedicated Postgres RLS test, not a browser lab.
