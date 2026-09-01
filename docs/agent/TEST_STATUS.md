@@ -1,6 +1,6 @@
 # Test status
 
-- **When:** P1.4–P1.6 squash-merged to `main` (user pick: merge). [#6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6) merged; [#4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4)/[#5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5) closed as superseded.
+- **When:** P1.4–P1.6 on `main`. User pick after merge: **giữ `main`** (no A-lab, no capture-share).
 - **Product SHA:** `1be6d07` (`feat(p1.4-p1.6): audit, collab HTTP, and More Team inspect view (#6)`). This docs commit is handoff only.
 - **Commands (GitHub checkout of `main`):**
   - `npm test` — expect **509 tests / 505 pass / 4 skip / 0 fail** (sandbox-doc tests skip).

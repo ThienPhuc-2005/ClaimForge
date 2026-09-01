@@ -13,11 +13,11 @@ This is **not** a new App Builder scaffold. The product is **ClaimForge** at `Th
 | `main` product (P1.4–P1.6 squash) | `1be6d07` | merged [#6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6); [#4](https://github.com/ThienPhuc-2005/ClaimForge/pull/4)/[#5](https://github.com/ThienPhuc-2005/ClaimForge/pull/5) closed as superseded | [run 41](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33500312474) success |
 | Prior `main` (P1.3 + docs) | `944f81b` | — | [run 35](https://github.com/ThienPhuc-2005/ClaimForge/actions/runs/33456608096) |
 
-User pick **2 = merge** (2026-09-01). Squash of #6 landed audit + collab HTTP + More → Team. This file on `main` is the live handoff.
+User pick **1 = giữ `main`** (2026-09-01, after merge). Do not start A-lab or capture-share unless they pick it. This file on `main` is the live handoff.
 
-If the user says **tiếp** after a picker: that means continue the **in-progress slice**, not start encrypted capture share. After this merge the default is keep-`main` or an A-lab. Do not auto-start the next epic.
+If the user says **tiếp** after a picker: that means continue the **in-progress slice**, not start encrypted capture share. There is **no in-progress slice**. Default is keep-`main`. Do not auto-start the next epic.
 
-## Snapshot (2026-09-01, post-merge P1.4–P1.6)
+## Snapshot (2026-09-01, post-merge, held)
 
 1. **Repo:** `ThienPhuc-2005/ClaimForge`. Working tree on `main` is clean except an untracked `node_modules` symlink in some sandboxes — never commit it.
 2. **Milestone:** v0.9 Core Hardening. **P0 + P1.0–P1.6 merged** to `main`.
@@ -40,7 +40,7 @@ If the user says **tiếp** after a picker: that means continue the **in-progres
    - Talk to the user in **Vietnamese**, product terms (no ports/paths/`localhost`/tool names unless they ask).
    - **Every time you finish a slice, end with a short numbered command picker** (what it does + whether it increases bug-finding). Wait for them to pick. Do not auto-start the next epic.
    - Propose a default pick; do not force them to invent the next epic.
-8. **Next step:** only what the user picks. Default is keep-`main`. Lab A Team (browser + Postgres on audit/collab/Team UI) increases bug-finding. Do not start capture-share unless they name it.
+8. **Next step:** user picked **giữ `main`**. Do not start A-lab or capture-share unless they name it.
 
 ## Key paths
 

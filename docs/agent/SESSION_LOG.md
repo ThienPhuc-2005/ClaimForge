@@ -1,3 +1,9 @@
+## 2026-09-01 — hold main after P1.4–P1.6 merge
+
+- User pick **1 = giữ `main`**. Did not start A-lab. Did not start capture-share. No product commit after squash `1be6d07`.
+- Live handoff is `main` (product `1be6d07`, docs `f4c629e`).
+- Next agent: clone GitHub, checkout `main`, read this HANDOFF. Do not scaffold. Do not re-implement P1.4–P1.6. Do not start lab or capture-share unless the user picks it.
+
 ## 2026-09-01 — P1.4–P1.6 merged to main
 
 - User pick **2 = merge**. Squash-merged [PR #6](https://github.com/ThienPhuc-2005/ClaimForge/pull/6) as `1be6d07` (`feat(p1.4-p1.6): audit, collab HTTP, and More Team inspect view (#6)`).
