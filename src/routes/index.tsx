@@ -16,6 +16,7 @@ import { ForgeView } from "@/components/forge-view";
 import { LootView } from "@/components/loot-view";
 import { LabView } from "@/components/lab-view";
 import { PolicyView } from "@/components/policy-view";
+import { TeamView } from "@/components/team-view";
 import { engagementMarkdown, exportReportPdf, renderReportJson, toReportDTO } from "@/lib/claimforge/report.ts";
 import { MAX_CAPTURE_BYTES } from "@/lib/claimforge/limits.ts";
 import {
@@ -49,6 +50,7 @@ const MORE_TABS = [
   { id: "traffic", label: "Traffic" },
   { id: "lab", label: "Victim lab" },
   { id: "policy", label: "Policy" },
+  { id: "team", label: "Team" },
 ] as const;
 
 function Home() {
@@ -99,6 +101,12 @@ function Home() {
   const moreLabel = MORE_TABS.find((t) => t.id === tab)?.label;
   const labelledBy = deskPanelLabelledBy(tab);
   const panelName = moreLabel ?? PRIMARY_TABS.find((t) => t.id === tab)?.label ?? "Analysis";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("team") === "1") setTab("team");
+  }, [setTab]);
 
   return (
     <div className="min-h-dvh bg-bg text-fg">
@@ -245,7 +253,7 @@ function Home() {
             aria-labelledby={labelledBy}
             aria-label={labelledBy ? undefined : panelName}
           >
-            {!workspace.requests.length && tab !== "lab" && tab !== "policy" ? (
+            {!workspace.requests.length && tab !== "lab" && tab !== "policy" && tab !== "team" ? (
               <Onboarding onDemo={loadDemo} onLab={() => setTab("lab")} />
             ) : null}
             {tab === "findings" && workspace.requests.length > 0 && <FindingsList findings={workspace.findings} />}
@@ -258,6 +266,7 @@ function Home() {
             {tab === "traffic" && <Traffic />}
             {tab === "lab" && <LabView />}
             {tab === "policy" && <PolicyView />}
+            {tab === "team" && <TeamView />}
           </div>
         </section>
 

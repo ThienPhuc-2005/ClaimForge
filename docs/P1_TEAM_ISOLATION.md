@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4+ (audit, collab HTTP, UI) stay out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4–P1.6 are stacked drafts (PR #4 audit, PR #5 collab HTTP, P1.6 Team UI). Not merged unless asked.
 
 **Decided 2026-08-30:**
 
@@ -91,7 +91,7 @@ Composite primary keys and composite FKs make a workspace or collab row physical
 
 The same `user_key` **may** belong to multiple tenants (separate member rows). Isolation is `(tenant_id, user_key)`, not `user_key` alone.
 
-**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies. P1.2 adds `team_oidc_pending` and `team_session` in `migrations/0004_team_oidc_sessions.sql` without rewriting `0003`.
+**Not in P1.1:** session tables, OIDC client/secret tables, audit tables, RLS policies. P1.2 adds `team_oidc_pending` and `team_session` in `migrations/0004_team_oidc_sessions.sql` without rewriting `0003`. P1.4 adds `team_audit` in `migrations/0005_team_audit.sql` without rewriting `0003` or `0004`.
 
 ---
 
@@ -174,13 +174,13 @@ Instance-wide confidential OIDC client. Endpoints and secrets are env-only (`CLA
 
 ### Audit (P1.4)
 
-Append-only. No capture bodies, no JWKS material. **Do not store a plain hash of client IP** (low entropy, rainbow-tableable). Either omit IP or store `HMAC(ip, rotating_server_key)` with key rotation and no raw IP alongside. User-agent similarly: omit or HMAC.
+Append-only `team_audit`. Who changed whose collab/membership/workspace. No capture bodies, no JWKS material. **IP and User-Agent are omitted** (ADR-023) — never raw IP and never `sha256(ip)`. Actor is the live session member. Tenant-scoped reads. Deleting a member does not erase rows. `GET /api/team/audit` is session-bound.
 
 ### RBAC HTTP (P1.3)
 
 Role on the **member row** is authoritative. A JWT `role=admin` claim is not. Viewer cannot mutate. `accepted-risk` requires lead+. Admin+ may add/change/remove members; `owner` is bootstrap-only; the last owner cannot be removed or demoted. Members HTTP is session-bound (`GET/POST/PATCH/DELETE /api/team/members`). Server may refuse to persist loot/replay; it does not control in-browser copy.
 
-Collab HTTP (policy/review/ReportDTO over HTTP) remains P1.5; the kernel already applies RBAC on `updateWorkspaceCollab`.
+Collab HTTP (policy/review/ReportDTO over HTTP) is P1.5; the kernel already applies RBAC and persist projection on `updateWorkspaceCollab`. Workspace list/create/delete HTTP is in the same slice because collab is per-workspace.
 
 ### Postgres RLS
 
@@ -223,4 +223,35 @@ Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI, tenant listing, IdP logout,
 - Viewer read-only; `accepted-risk` lead+; admin+ member management; last owner protected
 - P1.3 gates in `p1-gates.ts` and `p1-3-rbac.test.ts` / `p1-3-http.test.ts`
 
-Out of scope: P1.4 audit, P1.5 collab HTTP, P1.6 UI.
+Out of scope for that slice: P1.4 audit, P1.5 collab HTTP, P1.6 UI.
+
+## 12. P1.4 deliverable
+
+- ADR-037 + ADR-023 omit-IP lock
+- Migration `0005_team_audit.sql` (additive; UPDATE trigger; no member FK; no IP/UA columns)
+- Kernel append on member/workspace/collab mutations in the same transaction
+- `GET /api/team/audit` (session-bound; no tenant_id; no actor override)
+- P1.4 gates in `p1-gates.ts` and `p1-4-audit.test.ts` / `p1-4-http.test.ts`
+
+Out of scope: P1.5 collab HTTP, P1.6 UI, HMAC-IP, tenant listing.
+
+## 13. P1.5 deliverable
+
+- ADR-038
+- Session-bound `GET/POST/DELETE /api/team/workspaces` and `GET/PATCH /api/team/collab`
+- Persist allowlist and RBAC stay in the kernel (`assertAllowedCollab`, live `team_member.role`)
+- Viewer GET; analyst+ writes; `accepted-risk` lead+; missing/cross-tenant 404; caller `tenant_id` 400
+- P1.5 gates in `p1-gates.ts` and `p1-5-http.test.ts`
+
+Out of scope: P1.6 Team UI, HMAC-IP, tenant listing, capture upload.
+
+## 14. P1.6 deliverable
+
+- ADR-039
+- More → Team inspect view (not a primary tab)
+- Slug sign-in, session, members, workspaces, push/pull collab, audit
+- Role from members list; no tenant list; loot/replay copy documented as local
+- P1.6 gates in `p1-gates.ts` and `p1-6-ui.test.ts`
+
+Out of scope: tenant listing, HMAC-IP, capture upload, IdP logout, OIDC discovery.
+

@@ -97,7 +97,44 @@ P1.1 prevents cross-tenant access regardless of role. Role enum exists on `team_
 
 ## ADR-023 — Audit must not store raw or unsalted IP hashes
 
-Deferred to P1.4. If IP is logged at all, use HMAC with a rotating server key, never `sha256(ip)` and never raw IP. P1.1 has no audit table.
+P1.4 omits client IP and User-Agent entirely. Do not add `ip`, `ip_hash`, or `user_agent` columns, and do not persist `sha256(ip)` in `detail_json`. If a later slice needs network forensics, use `HMAC(ip, rotating_server_key)` with rotation and never store raw IP beside it.
+
+## ADR-037 — P1.4 audit is append-only, tenant-scoped, and actor-live
+
+Locked for the P1.4 epic:
+
+- Additive migration `0005_team_audit.sql`. Does not rewrite 0003 or 0004.
+- Rows record who changed whose membership, workspace, or collab. Closed `detail_json` shapes only (`role` / `fromRole`+`toRole` / workspace `name` / collab `{fields}`). No capture bodies, no JWKS material, no JWT compact, no IP/UA (ADR-023).
+- Actor is the live `team_member` row from `requireActiveMember`, never a client `actorUserKey`, JWT `role`, or minted `ctx.role`.
+- No FK to `team_member`: deleting a member must not erase who-changed-what. Tenant CASCADE may drop rows with the tenant.
+- `UPDATE` is rejected (append-only trigger). Application has no delete-audit API. Mutations and the insert share one transaction so a failed write leaves no row.
+- Reads are tenant-scoped (`listAudit` / `GET /api/team/audit`). Same-tenant viewer+ may read. Caller `tenant_id` / actor fields are isolation errors. HTTP JSON omits `tenantId` and IP. Opaque HTTPS session only; Bearer JWT is 401.
+- Not Grok Better Auth. Collab HTTP is P1.5 (ADR-038). Team UI is P1.6 (ADR-039).
+
+## ADR-038 — P1.5 collab HTTP is session-bound and kernel-gated
+
+Locked for the P1.5 epic:
+
+- No new tables. Persist allowlist, Team ReportDTO projection, and live-role RBAC stay in the kernel (`assertAllowedCollab`, `requireActiveMember`, `assertCapability`). HTTP does not reimplement them.
+- Routes: `GET/POST/DELETE /api/team/workspaces` and `GET/PATCH /api/team/collab`. Workspace HTTP is in this slice because collab is per-workspace (IDOR target).
+- Tenant comes only from the opaque HTTPS session. Caller `tenant_id` / `tenantId` / actor fields are isolation errors (HTTP 400). Public JSON omits `tenantId`.
+- Same-tenant denial is 403 `forbidden`. Missing and cross-tenant workspace/collab are 404 `not found` (no existence leak).
+- Viewer GET. Workspace/collab writes are analyst+. `accepted-risk` is live lead+. Mutations are same-origin.
+- GET collab returns the stored Team projection (`loot.value` and `replays.raw`/`curl` = `[redacted]`). Capture bodies are rejected on write (ADR-020 / ADR-032).
+- Opaque HTTPS session only. Bearer JWT is 401. HTTP URL is 400. Not Grok Better Auth.
+- Collab writes still append `collab.update` when P1.4 is present (same kernel transaction). Team UI is P1.6 (ADR-039). In-browser loot/replay copy is not a server authorization decision (ADR-027).
+
+## ADR-039 — P1.6 Team UI is a More inspect view over the session
+
+Locked for the P1.6 epic:
+
+- Solo remains the default desk. Team is **More → Team**, not a primary tab. Arrow keys still cycle only Findings / Playbook / Forge.
+- Sign-in is a tenant slug sent to `GET /api/team/oidc/login?slug=`. No tenant list. No `tenant_id` on login or write payloads.
+- After OIDC, callback redirects to `/?team=1` (opens the inspect view). Query has no tenant UUID.
+- Session JSON is `{userKey, tenantId}`. The UI ignores a `role` field if present. Live role is the members list row (ADR-036).
+- Viewer reads members/workspaces/collab/audit. Workspace/collab push is analyst+. `accepted-risk` push is lead+. Member add/remove is admin+. Owner cannot be assigned from the UI.
+- Push sends the current desk policy, review map, and ReportDTO. The kernel still projects loot/replay. Pull applies policy + review; it does not restore captures.
+- The view states loot/replay copy in the tab is a local analyst action (ADR-027). Not Grok Better Auth.
 
 ## ADR-024 — Future sessions are opaque tokens stored as hashes
 
@@ -179,6 +216,6 @@ Locked for the P1.3 epic:
 - `owner` cannot be assigned after bootstrap. The last owner cannot be removed or demoted. Admin manages strictly lower ranks only.
 - Same-tenant denials are `TeamForbiddenError` (HTTP 403). Missing/cross-tenant stay `TeamNotFoundError` (no existence leak).
 - Members HTTP: `GET/POST/PATCH/DELETE /api/team/members` bound to the opaque session tenant. No `tenant_id` in body. No tenant list. `GET /api/team/session` still omits role. JWT is not an input.
-- Server RBAC may refuse to persist or return loot/replay; it does not control in-browser copy (ADR-027). Collab HTTP remains P1.5.
+- Server RBAC may refuse to persist or return loot/replay; it does not control in-browser copy (ADR-027). Collab HTTP is P1.5 (ADR-038).
 
 

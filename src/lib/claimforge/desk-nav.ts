@@ -3,7 +3,7 @@
 export const PRIMARY_TAB_IDS = ["findings", "playbook", "forge"] as const;
 export type PrimaryTabId = (typeof PRIMARY_TAB_IDS)[number];
 
-export const MORE_TAB_IDS = ["diff", "graph", "loot", "timeline", "traffic", "lab", "policy"] as const;
+export const MORE_TAB_IDS = ["diff", "graph", "loot", "timeline", "traffic", "lab", "policy", "team"] as const;
 export type MoreTabId = (typeof MORE_TAB_IDS)[number];
 
 export type DeskNavKey = "ArrowRight" | "ArrowLeft" | "Home" | "End";

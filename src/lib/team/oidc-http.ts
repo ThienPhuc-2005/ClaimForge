@@ -145,7 +145,7 @@ export async function handleTeamOidcCallback(request: Request, deps: TeamHttpDep
     const userKey = oidcUserKey(claims.iss, claims.sub);
     const context = await resolveTenantContextBySlug(sql, userKey, pending.slug);
     const minted = await mintTeamSession(sql, context, now);
-    return redirect("/", {
+    return redirect("/?team=1", {
       "Set-Cookie": serializeTeamSessionCookie(minted.token, remainingSessionMaxAge(minted.session, now)),
     });
   } catch (err) {

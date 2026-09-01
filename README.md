@@ -49,7 +49,7 @@ Heuristics are capture-side. Replay curls are for an authorized lab proxy.
 
 ## Team (self-hosted, opt-in)
 
-Solo stays the default. Team identity is customer OIDC, not Grok Better Auth. The first tenant and owner are created with an operator CLI (`npm run team:bootstrap`) — not an HTTP endpoint. Procedure: [docs/operator/BOOTSTRAP.md](docs/operator/BOOTSTRAP.md). Architecture: [docs/P1_TEAM_ISOLATION.md](docs/P1_TEAM_ISOLATION.md).
+Solo stays the default. Team identity is customer OIDC, not Grok Better Auth. The first tenant and owner are created with an operator CLI (`npm run team:bootstrap`) — not an HTTP endpoint. On a configured instance, **More → Team** signs in with a tenant slug, then members / workspaces / collab / audit follow the live member role. Loot and replay copy in the tab is still a local analyst action. Procedure: [docs/operator/BOOTSTRAP.md](docs/operator/BOOTSTRAP.md). Architecture: [docs/P1_TEAM_ISOLATION.md](docs/P1_TEAM_ISOLATION.md).
 
 ## Victim lab
 
