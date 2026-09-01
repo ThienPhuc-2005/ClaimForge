@@ -1,4 +1,11 @@
+## 2026-09-01 — handoff to new chat
+
+- User asked to bàn giao for a new chat. No product change. Lab script stays untracked.
+- Live product on `main`: P1.7 squash `9cbd88d` (PR #7). A-lab 31/31 recorded.
+- Next agent: clone GitHub, checkout `main`, read `docs/agent/HANDOFF.md`. Do not scaffold. Do not re-implement P1.4–P1.7. Do not merge unless they pick merge. Vietnamese + product terms. End every turn with a picker. Default keep-`main`.
+
 ## 2026-09-01 — A-lab P1.4–P1.7 (sandbox-only)
+
 
 - User pick **2 = Lab A Team** after P1.7 merge. Did not start capture-share. Lab script is untracked (not committed).
 - Chromium cookie jar + real Postgres 16: **31/31 pass** (session omits role; Bearer JWT 401; HTTP 400; `token_hash` is SHA-256; audit omits tenantId/IP; viewer/analyst/lead RBAC; cross-tenant 404; capture rejected; loot/replay projected; admin cannot assign owner; last owner stays; member delete keeps audit; `team_audit` UPDATE rejected; missing GUC hides workspaces; SET LOCAL lists session tenant; FORCE RLS on member/workspace/collab/audit; More → Team inspect).
