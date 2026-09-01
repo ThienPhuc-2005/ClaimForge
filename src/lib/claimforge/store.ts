@@ -27,7 +27,8 @@ export type DeskTab =
   | "timeline"
   | "traffic"
   | "lab"
-  | "policy";
+  | "policy"
+  | "team";
 
 interface ForgeState {
   aLabel: string;
@@ -52,6 +53,7 @@ interface ForgeState {
   setImportError: (msg: string | null) => void;
   setFindingReview: (fingerprint: string, to: ReviewState) => boolean;
   applyPolicy: (draft: AnalysisPolicy) => boolean;
+  hydrateTeamCollab: (input: { policy?: AnalysisPolicy | null; review?: Record<string, ReviewState> | null }) => boolean;
   resetPolicy: () => void;
   loadDemo: () => void;
   clearAll: () => void;
@@ -177,6 +179,28 @@ export const useForge = create<ForgeState>()(
         const prevFindings = get().workspace.findings;
         set({ policy, policyErrors: [] });
         runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
+        return true;
+      },
+      hydrateTeamCollab: (input) => {
+        if (input.policy) {
+          const decision = policyApplyDecision(input.policy);
+          if (!decision.apply) {
+            set({ policyErrors: decision.errors });
+            return false;
+          }
+          const policy = applyPolicyEdit(get().policy, input.policy);
+          const prevFindings = get().workspace.findings;
+          set({ policy, policyErrors: [] });
+          runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, policy, set, prevFindings);
+        }
+        if (input.review) {
+          const reviewByFingerprint = { ...input.review };
+          const ws = useForge.getState().workspace;
+          set({
+            reviewByFingerprint,
+            workspace: { ...ws, findings: applyReviewOverrides(ws.findings, reviewByFingerprint) },
+          });
+        }
         return true;
       },
       resetPolicy: () => {

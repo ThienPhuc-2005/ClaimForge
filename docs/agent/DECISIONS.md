@@ -109,7 +109,7 @@ Locked for the P1.4 epic:
 - No FK to `team_member`: deleting a member must not erase who-changed-what. Tenant CASCADE may drop rows with the tenant.
 - `UPDATE` is rejected (append-only trigger). Application has no delete-audit API. Mutations and the insert share one transaction so a failed write leaves no row.
 - Reads are tenant-scoped (`listAudit` / `GET /api/team/audit`). Same-tenant viewer+ may read. Caller `tenant_id` / actor fields are isolation errors. HTTP JSON omits `tenantId` and IP. Opaque HTTPS session only; Bearer JWT is 401.
-- Not Grok Better Auth. Collab HTTP is P1.5 (ADR-038). Team UI remains P1.6.
+- Not Grok Better Auth. Collab HTTP is P1.5 (ADR-038). Team UI is P1.6 (ADR-039).
 
 ## ADR-038 — P1.5 collab HTTP is session-bound and kernel-gated
 
@@ -122,8 +122,19 @@ Locked for the P1.5 epic:
 - Viewer GET. Workspace/collab writes are analyst+. `accepted-risk` is live lead+. Mutations are same-origin.
 - GET collab returns the stored Team projection (`loot.value` and `replays.raw`/`curl` = `[redacted]`). Capture bodies are rejected on write (ADR-020 / ADR-032).
 - Opaque HTTPS session only. Bearer JWT is 401. HTTP URL is 400. Not Grok Better Auth.
-- Collab writes still append `collab.update` when P1.4 is present (same kernel transaction). Team UI remains P1.6. In-browser loot/replay copy is not a server authorization decision (ADR-027).
+- Collab writes still append `collab.update` when P1.4 is present (same kernel transaction). Team UI is P1.6 (ADR-039). In-browser loot/replay copy is not a server authorization decision (ADR-027).
 
+## ADR-039 — P1.6 Team UI is a More inspect view over the session
+
+Locked for the P1.6 epic:
+
+- Solo remains the default desk. Team is **More → Team**, not a primary tab. Arrow keys still cycle only Findings / Playbook / Forge.
+- Sign-in is a tenant slug sent to `GET /api/team/oidc/login?slug=`. No tenant list. No `tenant_id` on login or write payloads.
+- After OIDC, callback redirects to `/?team=1` (opens the inspect view). Query has no tenant UUID.
+- Session JSON is `{userKey, tenantId}`. The UI ignores a `role` field if present. Live role is the members list row (ADR-036).
+- Viewer reads members/workspaces/collab/audit. Workspace/collab push is analyst+. `accepted-risk` push is lead+. Member add/remove is admin+. Owner cannot be assigned from the UI.
+- Push sends the current desk policy, review map, and ReportDTO. The kernel still projects loot/replay. Pull applies policy + review; it does not restore captures.
+- The view states loot/replay copy in the tab is a local analyst action (ADR-027). Not Grok Better Auth.
 
 ## ADR-024 — Future sessions are opaque tokens stored as hashes
 

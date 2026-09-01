@@ -24,6 +24,6 @@
 | P1.3 | RBAC on Team APIs | done | Live `team_member.role`. Viewer read-only. `accepted-risk` lead+. Admin+ `/api/team/members`. ADR-036. Merged PR #3 squash `4cefe02`. A3 lab 36/36 (Chrome+Firefox+Postgres). Server cannot claim in-browser export control. |
 | P1.4 | Append-only audit | done | `migrations/0005_team_audit.sql`, `src/lib/team/audit.ts`, `GET /api/team/audit`. Omit IP/UA (ADR-023). Live member actor. Member delete does not erase rows. ADR-037. Draft on `feat/p1.4-audit`; not merged. |
 | P1.5 | Collab HTTP for policy/review/ReportDTO | done | Session-bound workspaces + collab HTTP. Kernel persist/RBAC. ADR-038. Draft on `feat/p1.5-collab-http` stacked on P1.4; not merged. |
-| P1.6 | Team UI | not_started | After kernel+OIDC. |
+| P1.6 | Team UI | done | More → Team over the session. ADR-039. Draft on `feat/p1.6-team-ui` stacked on P1.5; not merged. |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029). |

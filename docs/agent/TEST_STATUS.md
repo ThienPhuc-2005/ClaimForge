@@ -1,12 +1,12 @@
 # Test status
 
-- **When:** P1.5 on `feat/p1.5-collab-http` (not merged). Stacked on P1.4 `83059bb`.
-- **Branch:** `feat/p1.5-collab-http` (from `feat/p1.4-audit` / `main` `944f81b`)
+- **When:** P1.6 on `feat/p1.6-team-ui` (not merged). Stacked on P1.5 `9e3c4ee`.
+- **Branch:** `feat/p1.6-team-ui` (from `feat/p1.5-collab-http` / P1.4 `83059bb` / `main` `944f81b`)
 - **Commands (this branch):**
-  - `npm test` — expect **503 tests / 499 pass / 4 skip / 0 fail** on a GitHub checkout (sandbox-doc tests skip without `AGENTS.md` / `.grok/skills`). P1.5 adds 10 tests vs P1.4 493.
+  - `npm test` — expect **509 tests / 505 pass / 4 skip / 0 fail** on a GitHub checkout (sandbox-doc tests skip). P1.6 adds 6 tests vs P1.5 503.
   - `npm run typecheck` → pass
   - `npm run lint` → pass
   - `npm run audit:deps` → 0 high
   - `npm run build` → pass
 - **CI:** wait for Actions on the draft PR. Green is evidence, not a merge gate (ADR-029).
-- **Browser UI:** no Team UI yet (P1.6). Workspaces, collab, audit, and members routes are API-only.
+- **Browser UI:** More → Team is API-backed inspect. Primary tabs unchanged.

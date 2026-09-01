@@ -26,6 +26,7 @@ test("Home and End jump to first/last primary tab", () => {
 test("arrows ignore More-view ids and enter at Findings", () => {
   assert.equal(nextPrimaryTab("diff", "diff", "ArrowRight"), "findings");
   assert.equal(nextPrimaryTab("", "lab", "ArrowLeft"), "findings");
+  assert.equal(nextPrimaryTab("", "team", "ArrowRight"), "findings");
   assert.equal(nextPrimaryTab("", "graph", "End"), "forge");
   for (const key of ["ArrowRight", "ArrowLeft", "Home", "End"] as const) {
     assert.equal(isPrimaryTab(nextPrimaryTab("graph", "loot", key)), true);

@@ -1,7 +1,7 @@
 /**
- * P1 catalog: each isolation / OIDC / RBAC / audit / collab-HTTP invariant has a test that would fail if the fix is reverted.
+ * P1 catalog: each isolation / OIDC / RBAC / audit / collab-HTTP / Team-UI invariant has a test that would fail if the fix is reverted.
  */
-export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5"] as const;
+export const P1_ITEMS = ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5", "P1.6"] as const;
 export type P1Item = (typeof P1_ITEMS)[number];
 
 export interface P1Gate {
@@ -768,6 +768,54 @@ export const P1_GATES: P1Gate[] = [
     after: "List is the session tenant only; public JSON omits tenantId",
     evidenceTest:
       "p1-5-http.test.ts:GET /api/team/workspaces lists the session tenant only; JSON omits tenantId",
+  },
+  {
+    id: "P1.6-more-not-primary",
+    p1: "P1.6",
+    bug: "Team UI was a primary tab so arrows landed on it",
+    before: "Team sat in the tablist next to Findings",
+    after: "Team is a More inspect view; arrows stay on Findings/Playbook/Forge",
+    evidenceTest: "p1-6-ui.test.ts:Team is a More inspect view, not a primary tab",
+  },
+  {
+    id: "P1.6-no-tenant-list",
+    p1: "P1.6",
+    bug: "Team UI listed tenants or sent tenant_id on login",
+    before: "A tenant picker or /api/team/tenants bound the session",
+    after: "Sign-in is slug-only; login path has no tenant_id",
+    evidenceTest: "p1-6-ui.test.ts:Team login path is slug-only; no tenant list or tenant_id",
+  },
+  {
+    id: "P1.6-role-from-members",
+    p1: "P1.6",
+    bug: "UI trusted session JSON role or JWT role=owner",
+    before: "GET /api/team/session.role drove member admin controls",
+    after: "Session parser drops role; live role is the members list row",
+    evidenceTest: "p1-6-ui.test.ts:session JSON role is ignored; live role comes from members",
+  },
+  {
+    id: "P1.6-no-tenant-id-payload",
+    p1: "P1.6",
+    bug: "Team UI wrote tenant_id on member/workspace/collab bodies",
+    before: "Client included tenantId from session on PATCH collab",
+    after: "Write payloads are name/role/workspaceId only; owner cannot be assigned",
+    evidenceTest: "p1-6-ui.test.ts:Team write payloads omit tenant_id and cannot assign owner",
+  },
+  {
+    id: "P1.6-loot-local",
+    p1: "P1.6",
+    bug: "Team UI claimed server RBAC blocks in-browser loot copy",
+    before: "Copy-loot button gated as a Team authorization decision",
+    after: "View states loot/replay copy is a local analyst action (ADR-027)",
+    evidenceTest: "p1-6-ui.test.ts:Team UI states loot/replay copy is local; does not import platform auth",
+  },
+  {
+    id: "P1.6-callback-opens-team",
+    p1: "P1.6",
+    bug: "OIDC callback redirected to / with tenant_id in the query",
+    before: "Location included tenant UUID or stayed on Findings with no Team panel",
+    after: "Callback opens More → Team via /?team=1; no tenant_id query",
+    evidenceTest: "p1-6-ui.test.ts:OIDC callback opens Team inspect without a tenant_id query",
   },
 ];
 

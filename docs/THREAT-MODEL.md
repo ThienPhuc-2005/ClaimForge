@@ -113,7 +113,18 @@ Policy, review, and Team ReportDTO persist over the opaque session. Workspaces a
 - Authenticate with a Bearer JWT or HTTP URL. Cross-origin mutations are 401.
 - Write as viewer, or persist `accepted-risk` below lead.
 
-Server RBAC still does not control in-browser loot/replay copy (ADR-027). Team UI is P1.6.
+Server RBAC still does not control in-browser loot/replay copy (ADR-027). Team UI is More → Team (P1.6).
+
+## Team mode (P1.6 — Team UI)
+
+The desk stays Solo by default. An attacker must not:
+
+- Pick another tenant from a list or send `tenant_id` from the browser.
+- Drive admin controls from a session/JWT `role` field (role is the live member row).
+- Land Team on a primary tab that keyboard-nav treats as Findings.
+- Be told that server RBAC prevents copying loot already in the tab.
+
+Callback opens More → Team via `/?team=1` with no tenant UUID in the query.
 
 ## Limitations
 

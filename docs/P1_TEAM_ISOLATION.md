@@ -2,7 +2,7 @@
 
 Canonical Team design. Agent state stays in `docs/agent/`. Do not duplicate this file there.
 
-**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4 (append-only audit) is on `feat/p1.4-audit` (draft PR #4; not merged). P1.5 (collab HTTP) is on `feat/p1.5-collab-http` stacked on P1.4 (draft PR; not merged). P1.6 UI stays out of scope until explicitly requested.
+**Status:** P1.0 accepted. P1.1–P1.3 are on `main` (P1.2 PR #2 `6de17a4`; P1.3 PR #3 `4cefe02`). P1.4–P1.6 are stacked drafts (PR #4 audit, PR #5 collab HTTP, P1.6 Team UI). Not merged unless asked.
 
 **Decided 2026-08-30:**
 
@@ -244,4 +244,14 @@ Out of scope: P1.5 collab HTTP, P1.6 UI, HMAC-IP, tenant listing.
 - P1.5 gates in `p1-gates.ts` and `p1-5-http.test.ts`
 
 Out of scope: P1.6 Team UI, HMAC-IP, tenant listing, capture upload.
+
+## 14. P1.6 deliverable
+
+- ADR-039
+- More → Team inspect view (not a primary tab)
+- Slug sign-in, session, members, workspaces, push/pull collab, audit
+- Role from members list; no tenant list; loot/replay copy documented as local
+- P1.6 gates in `p1-gates.ts` and `p1-6-ui.test.ts`
+
+Out of scope: tenant listing, HMAC-IP, capture upload, IdP logout, OIDC discovery.
 

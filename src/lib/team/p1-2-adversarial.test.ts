@@ -116,6 +116,7 @@ test("Team OIDC sources do not import createRemoteJWKSet or platform auth", () =
     join(root, "src/routes/api/team/audit.ts"),
     join(root, "src/routes/api/team/collab.ts"),
     join(root, "src/routes/api/team/workspaces.ts"),
+    join(root, "src/components/team-view.tsx"),
     join(root, "scripts/team-bootstrap.mjs"),
   ];
   assert.ok(files.length >= 8);
