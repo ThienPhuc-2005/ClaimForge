@@ -27,4 +27,4 @@
 | P1.6 | Team UI | done | More → Team over the session. ADR-039. Squash-merged in PR #6 `1be6d07`. A-lab Chromium+Postgres 27/27 (sandbox-only). |
 | P1.7 | Postgres RLS | done | `0006_team_rls.sql` FORCE RLS + kernel GUC. ADR-040. Squash-merged in PR #7 `9cbd88d`. Dedicated Postgres test (non-superuser). A-lab Chromium+Postgres 31/31 (sandbox-only; missing GUC hides workspaces). |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
-| P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029). |
+| P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029); importable ruleset + procedure in [docs/operator/BRANCH_PROTECTION.md](../operator/BRANCH_PROTECTION.md), still needs an operator to apply it. |
