@@ -257,3 +257,11 @@ Locked for the P2 epic (detection expansion):
 - When `slimActor` drops requests beyond the per-actor cap, `analyze()` records `Workspace.truncation` and emits a `CAPTURE_TRUNCATED` finding + a header banner. A security tool must never let dropped traffic look analyzed.
 - `ENGINE_VERSION` → `0.9.0-p2.0`, `RULE_VERSION` → `bola-trust-2` (schema + scoring changed).
 - P2 detections were run through an adversarial-review workflow (attack → verify per family). Real findings (401-as-enforcement false-Confirmed, `is_admin` coercion, over-broad admin classifier, CSRF value-substring suppression, tracking-cookie false positive, SameSite mislabel, refresh grace-window false-Confirmed, camelCase miss, spec non-numeric-param and third-party-host mismatches) were fixed with regression tests before commit.
+
+## ADR-044 — P2 detections close the loop into Playbook + Replay pack
+
+- The P2 families (BFLA, CSRF, refresh reuse) were surfacing only in the Findings list; `buildPaths`/`buildReplays` ignored them, so an analyst saw a finding with no reproduction. Fixed by wiring all three into the kill chain.
+- **Attack paths** (`buildPaths`): `path-bfla` (function-level bypass, incl. verb-tampering retry), `path-csrf` (forge a cross-site state change), `path-refresh` (rotation abuse, replay past the grace window). Keyed off finding fingerprints; each references the Replay pack.
+- **Replay recipes** (`buildReplays`): BFLA = the low-privilege actor's exact request under the credential boundary (only that actor's creds attached); CSRF = a cross-site PoC (`csrfPoc`: auto-submitting HTML form for urlencoded/GET, `fetch(..., {credentials:"include"})` for JSON); refresh = the rotated-token refresh call.
+- No new network behavior: PoCs are text artifacts (copy-only), redacted like every other replay on export (curl/raw → `[redacted]` in the Team projection). `buildReplays` now also takes `findings`.
+- Tests: `p2-playbook.test.ts` (direct + end-to-end via `analyze()`).

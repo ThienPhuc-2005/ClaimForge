@@ -1,3 +1,8 @@
+## 2026-09-16 — P2 detections wired into Playbook + Replay pack (follow-up)
+
+- After PR #8, user asked to "add a feature / upgrade the weak part". The weak part: BFLA/CSRF/refresh findings had no Playbook path or replay recipe — dead-ends for the analyst.
+- Wired all three into the kill chain: `path-bfla` / `path-csrf` / `path-refresh` attack paths + replay recipes (BFLA curl under credential boundary, CSRF cross-site PoC via new `csrfPoc`, refresh replay of the rotated-token call). PoCs are copy-only text, redacted on export. ADR-044.
+- `buildReplays` now takes `findings`. Tests: claimforge 216 (+5 `p2-playbook.test.ts`), typecheck/lint clean. Pushed to the same branch → updates PR #8.
 ## 2026-09-16 — P2 detection expansion (BFLA, CSRF, refresh reuse, OpenAPI coverage, scale)
 
 - User asked to "make the app stronger / do all of it". Built A+B+D within the existing no-network threat model; held C (active verification / encrypted capture share) for explicit consent (changes app nature, needs a new threat model).
