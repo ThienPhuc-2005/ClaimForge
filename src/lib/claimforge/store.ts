@@ -35,6 +35,7 @@ interface ForgeState {
   bLabel: string;
   aRaw: string;
   bRaw: string;
+  specRaw: string;
   persistCaptures: boolean;
   analyzing: boolean;
   importError: string | null;
@@ -47,6 +48,7 @@ interface ForgeState {
   findingDelta: PolicyRerunChange[];
   policyErrors: PolicyPatternError[];
   setActor: (side: "a" | "b", raw: string, immediate?: boolean) => void;
+  setSpec: (raw: string, immediate?: boolean) => void;
   setLabel: (side: "a" | "b", label: string) => void;
   setTab: (tab: ForgeState["tab"]) => void;
   setPersistCaptures: (v: boolean) => void;
@@ -84,7 +86,8 @@ function runAnalyze(
 ) {
   const gen = (runGen += 1);
   set({ analyzing: true, importError: null });
-  void analyzeAsync(aRaw, bRaw, aLabel, bLabel, policy)
+  const specRaw = useForge.getState().specRaw;
+  void analyzeAsync(aRaw, bRaw, aLabel, bLabel, policy, specRaw)
     .then((workspace) => {
       if (gen !== runGen) return;
       const overlays = useForge.getState().reviewByFingerprint;
@@ -111,6 +114,7 @@ export const useForge = create<ForgeState>()(
       bLabel: DEMO_B_LABEL,
       aRaw: "",
       bRaw: "",
+      specRaw: "",
       persistCaptures: false,
       analyzing: false,
       importError: null,
@@ -137,6 +141,20 @@ export const useForge = create<ForgeState>()(
           return;
         }
         if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(kick, ANALYZE_DEBOUNCE_MS);
+      },
+      setSpec: (raw, immediate) => {
+        if (raw.length > MAX_CAPTURE_BYTES) {
+          set({ importError: `Spec exceeds ${Math.round(MAX_CAPTURE_BYTES / (1024 * 1024))} MB limit.` });
+          return;
+        }
+        set({ specRaw: raw, importError: null, findingDelta: [] });
+        const kick = () => runAnalyze(get().aRaw, get().bRaw, get().aLabel, get().bLabel, get().policy, set);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        if (immediate) {
+          kick();
+          return;
+        }
         debounceTimer = setTimeout(kick, ANALYZE_DEBOUNCE_MS);
       },
       setLabel: (side, label) => {
@@ -229,6 +247,7 @@ export const useForge = create<ForgeState>()(
         set({
           aRaw: "",
           bRaw: "",
+          specRaw: "",
           importError: null,
           parseErrorA: null,
           parseErrorB: null,
@@ -248,6 +267,7 @@ export const useForge = create<ForgeState>()(
               bLabel: s.bLabel,
               aRaw: s.aRaw,
               bRaw: s.bRaw,
+              specRaw: s.specRaw,
               tab: s.tab,
               persistCaptures: true as const,
               reviewByFingerprint: s.reviewByFingerprint,
@@ -279,9 +299,11 @@ export const useForge = create<ForgeState>()(
         if (!state.policyErrors) state.policyErrors = [];
         if ((state.tab as string) === "artifacts") state.tab = "findings";
         const busy = state.analyzing || state.workspace.requests.length > 0;
+        if (typeof state.specRaw !== "string") state.specRaw = "";
         if (!state.persistCaptures && !busy) {
           state.aRaw = "";
           state.bRaw = "";
+          state.specRaw = "";
         }
         if (!busy) state.workspace = emptyWs(state.aLabel, state.bLabel, state.policy);
         if ((state.aRaw || state.bRaw) && !state.analyzing) {

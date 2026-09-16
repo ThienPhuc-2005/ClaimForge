@@ -59,9 +59,11 @@ function Home() {
     bLabel,
     aRaw,
     bRaw,
+    specRaw,
     tab,
     workspace,
     setActor,
+    setSpec,
     setLabel,
     setTab,
     loadDemo,
@@ -185,6 +187,13 @@ function Home() {
             {importError}
           </p>
         )}
+        {workspace.truncation && (workspace.truncation.droppedA || workspace.truncation.droppedB) ? (
+          <p className="mt-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn" role="alert">
+            Capture truncated — {workspace.truncation.droppedA + workspace.truncation.droppedB} request(s) beyond{" "}
+            {workspace.truncation.perActorLimit}/actor were not analyzed. Split the capture into focused sessions to cover
+            everything.
+          </p>
+        ) : null}
         <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat k="Requests" v={String(workspace.requests.length)} />
           <Stat k="Critical" v={String(crit)} hot={crit > 0} />
@@ -289,6 +298,11 @@ function Home() {
             parseError={parseErrorB}
             onLabel={(v) => setLabel("b", v)}
             onRaw={(v, immediate) => setActor("b", v, immediate)}
+          />
+          <SpecCard
+            raw={specRaw}
+            coverage={workspace.specCoverage}
+            onRaw={(v, immediate) => setSpec(v, immediate)}
           />
           <p className="text-xs leading-relaxed text-muted">
             Drop HAR or Burp XML for two roles. Analysis is client-side in this browser (a hosted shell may still load
@@ -449,6 +463,98 @@ function ImportCard({
           </p>
         ) : (
           <p className="mt-1 text-xs text-subtle">Max {mb} MB · paste is debounced</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function SpecCard({
+  raw,
+  coverage,
+  onRaw,
+}: {
+  raw: string;
+  coverage?: import("@/lib/claimforge/types").SpecCoverage;
+  onRaw: (v: string, immediate?: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const setImportError = useForge((s) => s.setImportError);
+  const mb = Math.round(MAX_CAPTURE_BYTES / (1024 * 1024));
+  const [open, setOpen] = useState(false);
+  const pct =
+    coverage && !coverage.error && coverage.declaredCount
+      ? Math.round((coverage.coveredCount / coverage.declaredCount) * 100)
+      : null;
+  return (
+    <details
+      className="rounded-xl border border-border bg-surface p-3"
+      open={open}
+      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-fg">
+        <span>
+          API spec
+          <span className="ml-2 text-xs font-normal text-muted">OpenAPI / Swagger JSON · optional</span>
+        </span>
+        <span className="text-xs text-subtle">
+          {coverage?.error
+            ? "spec error"
+            : pct != null
+              ? `${coverage!.coveredCount}/${coverage!.declaredCount} covered`
+              : raw
+                ? `${Math.round(raw.length / 1024)} KB`
+                : "empty"}
+        </span>
+      </summary>
+      <div className="mt-2">
+        <div className="mb-2 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={() => inputRef.current?.click()}
+            aria-label="Upload an OpenAPI or Swagger JSON file"
+          >
+            <Upload className="size-3.5" aria-hidden /> File
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            aria-label={`Upload API spec JSON, maximum ${mb} megabytes`}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.size > MAX_CAPTURE_BYTES) {
+                setImportError(`Spec exceeds ${mb} MB limit.`);
+                e.target.value = "";
+                return;
+              }
+              onRaw(await f.text(), true);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        <textarea
+          value={raw}
+          onChange={(e) => onRaw(e.target.value)}
+          spellCheck={false}
+          aria-label="OpenAPI or Swagger JSON spec"
+          placeholder='{"openapi":"3.0.0","paths":{ … }}  — JSON only'
+          className="h-24 w-full resize-y rounded-md border border-border bg-bg p-2 font-mono text-xs text-fg outline-none ring-accent focus:ring-2"
+        />
+        {coverage?.error ? (
+          <p className="mt-1 text-xs text-danger" role="alert">
+            {coverage.error}
+          </p>
+        ) : pct != null ? (
+          <p className="mt-1 text-xs text-subtle">
+            {coverage!.source} · {pct}% of declared endpoints exercised · {coverage!.untested.length} untested ·{" "}
+            {coverage!.shadow.length} undocumented. Details in Findings.
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-subtle">Diffs declared surface vs captured traffic. Never sends a request.</p>
         )}
       </div>
     </details>

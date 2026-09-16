@@ -231,3 +231,29 @@ Locked for the P1.7 epic:
 - Still no JIT, no tenant list, no capture share, no HMAC-IP (ADR-023).
 
 
+
+## ADR-041 — P2 detection families are add-on modules with the same evidence discipline
+
+Locked for the P2 epic (detection expansion):
+
+- Three new families, each a standalone module wired into `findings()`: BFLA (`bfla.ts`), CSRF (`csrf.ts`), refresh-token reuse (`refresh.ts`). No network — same "capture in, score out" model as P0/P1.
+- **BFLA** (OWASP API5, CWE-285): a non-privileged actor 2xx on an administrative *function* (distinct from object-level BOLA). Enforcement means **403** (forbidden), never 401 (unauthenticated proves nothing about role gating). `is_admin: true` is honored as a privilege signal so a real admin is never flagged. Confirmed needs a verified non-privileged role AND a 403 on the same template; else Suspicion. Enforcement is tracked per-template (any method) so verb-tampering (POST 403 / PUT 200) is caught. Self routes (`/me`, `/users/me`) are excluded.
+- **CSRF** (CWE-352): cookie-authenticated state change with no anti-CSRF token. Never Confirmed from a passive capture (needs a cross-site forge in a browser) — SameSite=None is Suspicion, unobserved/no-attribute is Observation (Lax default already blocks cross-site POST). Anti-CSRF tokens are matched by header/field **name**, never by a value substring. Bearer-authed requests are excluded (not ambient). Analytics cookies (`_ga`, `_gid`, …) are not treated as credentials. `X-Requested-With` does not count as protection (frameworks add it unconditionally).
+- **Refresh reuse** (CWE-613): a rotated refresh token accepted again. **Never Confirmed** — a short reuse/leeway window is an allowed pattern (RFC 9700; IdP "reuse interval"), so this is always Suspicion. Scoped to real token/refresh endpoints so a benign `*refresh*`-named cookie on an ordinary page never trips it. Reads snake_case and camelCase (`refreshToken`) tokens, and tokens in body / query / cookie / `X-Refresh-Token` header.
+- Confirmed Critical is still reserved for proven cross-actor read (ADR unchanged): `capSeverity` caps these families at High.
+- Every family has a P2 gate (`p2-gates.ts`) and adversarial unit tests, mirroring P0.8.
+
+## ADR-042 — OpenAPI/Swagger coverage is a JSON-only, offline surface diff
+
+- `spec.ts` parses an OpenAPI 3 / Swagger 2 **JSON** document and diffs the declared surface against the captured surface. YAML is refused with a clear message — no YAML dependency is added to a security tool.
+- Matching turns each declared path into a regex (`{param}` → one segment) so non-numeric path params (usernames, slugs) match; it does not rely on the id-shaped templatizer.
+- Requests are filtered to the spec's declared host(s) (`servers[].url` / Swagger `host`) so third-party telemetry in a browser HAR is not mistaken for shadow API.
+- An endpoint is "covered" only when a non-error (<400) response was seen; a 404/401/403/5xx-only probe stays an untested blind spot.
+- Output: untested declared operations (secured/write ranked first) and shadow (undocumented) endpoints. Emitted as Observation-level findings plus `Workspace.specCoverage`. `analyze()` gains an optional `specRaw` param threaded through the worker/store; the spec is treated like a capture for persistence (opt-in) and redaction.
+
+## ADR-043 — Scale caps are raised and truncation is never silent
+
+- `MAX_CAPTURE_BYTES` 8 MB → 24 MB; `MAX_REQUESTS_PER_ACTOR` 1200 → 4000.
+- When `slimActor` drops requests beyond the per-actor cap, `analyze()` records `Workspace.truncation` and emits a `CAPTURE_TRUNCATED` finding + a header banner. A security tool must never let dropped traffic look analyzed.
+- `ENGINE_VERSION` → `0.9.0-p2.0`, `RULE_VERSION` → `bola-trust-2` (schema + scoring changed).
+- P2 detections were run through an adversarial-review workflow (attack → verify per family). Real findings (401-as-enforcement false-Confirmed, `is_admin` coercion, over-broad admin classifier, CSRF value-substring suppression, tracking-cookie false positive, SameSite mislabel, refresh grace-window false-Confirmed, camelCase miss, spec non-numeric-param and third-party-host mismatches) were fixed with regression tests before commit.

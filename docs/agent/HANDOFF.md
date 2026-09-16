@@ -15,6 +15,8 @@ This is **not** a new App Builder scaffold. The product is **ClaimForge** at `Th
 
 User pick **2 = ghi A-lab lên main** (2026-09-01). Reconfirmed A-lab Chromium+Postgres **31/31** (sandbox-only). Do not start capture-share unless they name it. This file on `main` is the live handoff.
 
+**P2 in progress on branch `claude/optimistic-bell-v95isp` (NOT merged, 2026-09-16).** User asked to "make the app stronger / làm hết". Added, within the existing no-network threat model: **BFLA**, **CSRF**, **refresh-token reuse** detections; **OpenAPI/Swagger coverage** (JSON-only offline surface diff); **scale** (24MB / 4000-per-actor) with visible truncation. Held **C = active verification / encrypted capture share** for explicit consent (changes app nature; needs a new threat model). ADR-041/042/043. `ENGINE_VERSION 0.9.0-p2.0`, `RULE_VERSION bola-trust-2`. Ran an attack→verify adversarial-review workflow and fixed the real FPs/FNs with regression tests before commit. See the 2026-09-16 SESSION_LOG entry. Not merged; no PR unless the user asks.
+
 If the user says **tiếp** after a picker: that means continue the **in-progress slice**, not start encrypted capture share. There is **no in-progress slice**. Default is keep-`main`. Do not auto-start the next epic.
 
 ## Snapshot (2026-09-01, after A-lab reconfirm)
@@ -65,6 +67,7 @@ If the user says **tiếp** after a picker: that means continue the **in-progres
 
 | # | Lệnh | Làm gì | Tăng tìm lỗi? |
 |---|---|---|---|
-| **1** | **Giữ `main`** | Không code thêm | Không |
-| **2** | **Lab A Team** | Trình duyệt + Postgres trên audit / collab / More → Team | Có |
-| **3** | **Không làm capture share** | Đóng P1; không threat-model mới | Không |
+| **1** | **Xem lại / gộp P2** | Review nhánh `claude/optimistic-bell-v95isp`, mở PR hoặc gộp khi bạn duyệt | Không (đã có) |
+| **2** | **Lab A cho P2** | Trình duyệt + Postgres trên BFLA / CSRF / refresh / spec coverage | Có |
+| **3** | **Làm C — xác minh chủ động** | Mở threat model mới cho việc gửi gói tin thật (cần bạn nêu tên rõ) | Có, nhưng đổi bản chất app |
+| **4** | **Giữ `main`** | Không code thêm | Không |

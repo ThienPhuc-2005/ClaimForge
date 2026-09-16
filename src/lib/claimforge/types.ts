@@ -110,6 +110,37 @@ export interface DiffRow {
   note: string;
 }
 
+export interface SpecOperation {
+  method: string;
+  path: string;
+  normalized: string;
+  secured: boolean;
+  write: boolean;
+  deprecated: boolean;
+  summary: string;
+  covered: boolean;
+  observedStatuses: number[];
+}
+
+export interface SpecCoverage {
+  source: "openapi3" | "swagger2";
+  title: string;
+  version: string;
+  declaredCount: number;
+  coveredCount: number;
+  untested: SpecOperation[];
+  shadow: { method: string; template: string; statuses: number[] }[];
+  error?: string;
+}
+
+export interface TruncationInfo {
+  totalA: number;
+  totalB: number;
+  droppedA: number;
+  droppedB: number;
+  perActorLimit: number;
+}
+
 export interface Workspace {
   aLabel: string;
   bLabel: string;
@@ -137,6 +168,8 @@ export interface Workspace {
   inputHash: string;
   resultHash: string;
   policy: AnalysisPolicy;
+  specCoverage?: SpecCoverage;
+  truncation?: TruncationInfo;
 }
 
 export interface LootItem {

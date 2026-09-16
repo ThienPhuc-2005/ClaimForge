@@ -21,6 +21,10 @@ import { buildSurface, buildWordlists, harvestLoot } from "./loot.ts";
 import { buildPaths, buildReplays } from "./playbook.ts";
 import { classifySameObject, looksPublicOrShared, sameObjectHits, strongestClass } from "./bola.ts";
 import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
+import { brokenFunctionLevelAuthz } from "./bfla.ts";
+import { csrfExposures } from "./csrf.ts";
+import { refreshTokenReuse } from "./refresh.ts";
+import { buildSpecCoverage } from "./spec.ts";
 import { jwtIssueKind, mergeFindings } from "./dedup.ts";
 import {
   cookieReasonCode,
@@ -437,6 +441,120 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
     });
   }
 
+  for (const hit of brokenFunctionLevelAuthz(ws.requests, ws.jwts, policy)) {
+    add({
+      severity: hit.confidence === "confirmed" ? "high" : "medium",
+      confidence: hit.confidence,
+      title: `BFLA · actor ${hit.actor} (${hit.actorRole}) on admin function ${hit.method} ${hit.template}`,
+      why: hit.enforcementObserved
+        ? `${hit.method} ${hit.path} returned ${hit.status} for a ${hit.roleVerified ? "verified " : ""}non-privileged actor, while the same function was denied elsewhere in the capture — the function is enforced and this call bypassed it.`
+        : `${hit.method} ${hit.path} returned ${hit.status} for actor ${hit.actor}, whose role does not look privileged, on an administrative function.`,
+      evidence: [
+        `${hit.method} ${hit.path} → ${hit.status}`,
+        `role=${hit.actorRole}${hit.roleVerified ? " (verified)" : " (unverified)"}`,
+        hit.enforcementObserved ? "same function denied elsewhere" : "no deny observed on this function",
+      ],
+      template: hit.template,
+      how: "Enforce role/permission on the function server-side, not just object ownership. Replay the same request as the low-privilege actor in a lab proxy to confirm.",
+      fingerprint: `bfla:${hit.actor}:${hit.method}:${hit.template}`,
+      reasonCodes: hit.reasonCodes,
+      reviewState: hit.confidence === "confirmed" ? "new" : "needs-evidence",
+    });
+  }
+
+  for (const hit of csrfExposures(ws.requests, ws.cookies, policy)) {
+    const none = hit.sameSite === "none";
+    add({
+      severity: none ? "medium" : "low",
+      confidence: hit.confidence,
+      title: `CSRF-exposed ${hit.method} ${hit.template}`,
+      why: none
+        ? `${hit.method} ${hit.path} changes state using cookie auth (${hit.cookieNames.join(", ")}) with SameSite=None and no anti-CSRF token — a cross-site page could forge it.`
+        : `${hit.method} ${hit.path} changes state using cookie auth (${hit.cookieNames.join(", ")}) and no anti-CSRF token. SameSite was not observed; the modern Lax default blocks cross-site POST, but legacy/relaxed contexts do not.`,
+      evidence: [
+        `${hit.method} ${hit.path} → ${hit.status}`,
+        `cookies=${hit.cookieNames.join(", ")}`,
+        none ? "SameSite=None" : "SameSite not observed (Lax default)",
+      ],
+      template: hit.template,
+      how: "Require a per-session anti-CSRF token (or SameSite=Lax/Strict plus a custom request header). Confirm by forging the request cross-site in a browser.",
+      fingerprint: `csrf:${hit.method}:${hit.template}`,
+      reasonCodes: hit.reasonCodes,
+    });
+  }
+
+  for (const hit of refreshTokenReuse(ws.requests, policy)) {
+    add({
+      severity: hit.rotationObserved ? "high" : "medium",
+      confidence: hit.confidence,
+      title: hit.rotationObserved
+        ? `Rotated refresh token accepted again · actor ${hit.actor}`
+        : `Refresh token replayed · actor ${hit.actor}`,
+      why: hit.rotationObserved
+        ? `A refresh token the server had rotated away (a different token was issued in its place) was accepted again with ${hit.status} at ${hit.method} ${hit.path}. Rotation may not be enforced.`
+        : `The same refresh token was presented on two separate refresh requests and returned ${hit.status}. No rotation was observed in this capture, so reuse may be by design.`,
+      evidence: [
+        `${hit.method} ${hit.path} → ${hit.status}`,
+        `refresh ${hit.tokenHint}`,
+        hit.lab ? "lab host" : "outside lab",
+        hit.rotationObserved ? "rotation observed" : "rotation not observed",
+      ],
+      template: hit.template,
+      how: "A short reuse/leeway window is legitimate (RFC 9700). Confirm in a lab that the old token still works well past any grace window; on true reuse, revoke the whole token family (breach detection).",
+      fingerprint: `refresh:${hit.actor}:${hit.rotationObserved ? "reuse" : "replay"}:${hit.tokenHint}`,
+      reasonCodes: hit.reasonCodes,
+    });
+  }
+
+  const spec = ws.specCoverage;
+  if (spec && !spec.error && spec.declaredCount) {
+    if (spec.untested.length) {
+      const interesting = spec.untested.filter((o) => o.secured || o.write);
+      add({
+        severity: "info",
+        confidence: "observation",
+        title: `Spec coverage: ${spec.coveredCount}/${spec.declaredCount} declared endpoints exercised`,
+        why: `${spec.untested.length} declared endpoint(s) were never seen in the capture (${interesting.length} security-relevant). Untested endpoints are blind spots, not proof of a bug.`,
+        evidence: (interesting.length ? interesting : spec.untested)
+          .slice(0, 8)
+          .map((o) => `${o.method} ${o.path}${o.secured ? " [auth]" : ""}${o.write ? " [write]" : ""}`),
+        how: "Capture the untested routes — especially the secured and write ones — as both actors, then re-run.",
+        fingerprint: "spec:untested",
+        reasonCodes: ["SPEC_ENDPOINT_UNTESTED"],
+      });
+    }
+    if (spec.shadow.length) {
+      add({
+        severity: "low",
+        confidence: "observation",
+        title: `${spec.shadow.length} undocumented endpoint(s) in traffic`,
+        why: "Routes seen in the capture are not declared in the spec — shadow/undocumented API is a common source of un-reviewed authorization.",
+        evidence: spec.shadow.slice(0, 8).map((s) => `${s.method} ${s.template} [${s.statuses.join(",") || "—"}]`),
+        how: "Confirm these routes are intended and covered by the same authorization as the documented ones.",
+        fingerprint: "spec:shadow",
+        reasonCodes: ["SPEC_SHADOW_ENDPOINT"],
+      });
+    }
+  }
+
+  const tr = ws.truncation;
+  if (tr && (tr.droppedA || tr.droppedB)) {
+    add({
+      severity: "medium",
+      confidence: "observation",
+      title: `Capture truncated — ${tr.droppedA + tr.droppedB} request(s) not analyzed`,
+      why: `Only the first ${tr.perActorLimit} requests per actor are analyzed (A: ${tr.droppedA} dropped of ${tr.totalA}; B: ${tr.droppedB} dropped of ${tr.totalB}). Findings do not cover the dropped traffic.`,
+      evidence: [
+        `A ${tr.totalA - tr.droppedA}/${tr.totalA}`,
+        `B ${tr.totalB - tr.droppedB}/${tr.totalB}`,
+        `limit ${tr.perActorLimit}/actor`,
+      ],
+      how: "Split the capture into focused per-feature sessions so no requests are dropped, then re-run each.",
+      fingerprint: "capture:truncated",
+      reasonCodes: ["CAPTURE_TRUNCATED"],
+    });
+  }
+
   if (!out.length && !ws.requests.length) return [];
 
   if (!out.length) {
@@ -460,6 +578,7 @@ export function analyze(
   aLabel: string,
   bLabel: string,
   policy: AnalysisPolicy = DEFAULT_POLICY,
+  specRaw = "",
 ): Workspace {
   resetParseIds();
   const aParsed = parseActorInput(aRaw, "A");
@@ -467,6 +586,19 @@ export function analyze(
   const aReq = slimActor(aParsed.requests);
   const bReq = slimActor(bParsed.requests);
   const requests = [...aReq, ...bReq];
+  const droppedA = Math.max(0, aParsed.requests.length - aReq.length);
+  const droppedB = Math.max(0, bParsed.requests.length - bReq.length);
+  const truncation =
+    droppedA || droppedB
+      ? {
+          totalA: aParsed.requests.length,
+          totalB: bParsed.requests.length,
+          droppedA,
+          droppedB,
+          perActorLimit: MAX_REQUESTS_PER_ACTOR,
+        }
+      : undefined;
+  const specCoverage = buildSpecCoverage(specRaw, requests);
   const { jwts, cookies } = collectArtifacts(requests);
   const timeline = buildTimeline(requests, policy);
   const ownOpts = { policy, declaredLabels: { A: aLabel, B: bLabel } as const };
@@ -481,7 +613,7 @@ export function analyze(
   const loot = harvestLoot(requests);
   const wordlists = buildWordlists(requests, idsAAll, idsBAll);
   const surface = buildSurface(requests);
-  const inputHash = fnv1a64Hex(`${aRaw}\n${bRaw}\n${aLabel}\n${bLabel}\n${policyFingerprint(policy)}`);
+  const inputHash = fnv1a64Hex(`${aRaw}\n${bRaw}\n${aLabel}\n${bLabel}\n${policyFingerprint(policy)}\n${specRaw}`);
   const pre: Omit<Workspace, "findings" | "paths" | "replays" | "resultHash"> = {
     aLabel,
     bLabel,
@@ -505,6 +637,8 @@ export function analyze(
     policyVersion: policy.version,
     inputHash,
     policy,
+    specCoverage,
+    truncation,
   };
   const withFindings = { ...pre, findings: findings({ ...pre, paths: [], replays: [], resultHash: "" }) };
   const paths = buildPaths(withFindings);

@@ -1,3 +1,14 @@
+## 2026-09-16 — P2 detection expansion (BFLA, CSRF, refresh reuse, OpenAPI coverage, scale)
+
+- User asked to "make the app stronger / do all of it". Built A+B+D within the existing no-network threat model; held C (active verification / encrypted capture share) for explicit consent (changes app nature, needs a new threat model).
+- **New families** (modules wired into `findings()`, flow through report/PDF automatically): BFLA `bfla.ts`, CSRF `csrf.ts`, refresh reuse `refresh.ts`. **OpenAPI/Swagger coverage** `spec.ts` (JSON-only offline surface diff, `specRaw` threaded through worker/store + `SpecCard` UI). **Scale** `limits.ts` 24MB / 4000-per-actor with `CAPTURE_TRUNCATED` visibility (no silent drops).
+- ADR-041 (detection families), ADR-042 (spec coverage), ADR-043 (scale + truncation). `ENGINE_VERSION` → `0.9.0-p2.0`, `RULE_VERSION` → `bola-trust-2`.
+- **Adversarial-review workflow** (attack→verify per family) found and I fixed, with regression tests: 401-as-enforcement false-Confirmed (now 403-only), `is_admin:true` coercion (now honored), over-broad admin classifier (anchored segments, self-routes excluded), verb-tampering miss (per-template enforcement), CSRF token matched by value-substring (now name/key only), tracking-cookie false positive (`_ga` etc. excluded), no-SameSite-attribute mislabeled as None (now Observation), X-Requested-With over-suppression + `x-csrf` gap, refresh grace-window false-Confirmed (now always Suspicion, RFC 9700), camelCase `refreshToken` + header tokens, spec non-numeric path params (regex matching), spec third-party-host shadow (host-scoped), spec 4xx-only "covered" (now needs <400).
+- Confirmed cross-family invariants unchanged: Confirmed Critical still only for proven cross-actor read; new families cap at High; CSRF and refresh reuse are never Confirmed from a passive capture. Team ReportDTO persist-guard schema extended for `specCoverage`/`truncation` (redaction preserved).
+- Tests: claimforge **211 pass**, +50 P2 tests, full `src` tree **351 pass / 1 skip (RLS needs Postgres URL)**. typecheck + lint + prod build + `npm audit` clean. The 4 `scripts/*.test.mjs` app-env failures are sandbox-only and reproduce on pristine `origin/main` (green on GitHub CI).
+- Deferred (documented in KNOWN_ISSUES): plain destructive-on-object BFLA (`DELETE /users/{id}`) needs ownership context to avoid flagging self-service deletes. Did NOT start capture-share / active verification.
+- Branch: `claude/optimistic-bell-v95isp`. Not merged. No PR opened unless the user asks.
+
 ## 2026-09-01 — A-lab reconfirm recorded on main
 
 - User pick **2 = ghi A-lab lên main** after a new-chat Lab A run. Docs only. Product still `9cbd88d`. Lab script stays untracked.

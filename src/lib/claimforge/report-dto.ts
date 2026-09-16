@@ -85,6 +85,23 @@ export interface ReportDTO {
     actors: string[];
     auth: boolean;
   }[];
+  specCoverage?: {
+    source: "openapi3" | "swagger2";
+    title: string;
+    version: string;
+    declaredCount: number;
+    coveredCount: number;
+    untested: { method: string; path: string; secured: boolean; write: boolean; deprecated: boolean; summary: string }[];
+    shadow: { method: string; template: string; statuses: number[] }[];
+    error?: string;
+  };
+  truncation?: {
+    totalA: number;
+    totalB: number;
+    droppedA: number;
+    droppedB: number;
+    perActorLimit: number;
+  };
   redaction: {
     dropped: string[];
     preview: string[];
@@ -227,6 +244,38 @@ export function toReportDTO(ws: Workspace, generated = new Date().toISOString())
       actors: s.actors,
       auth: s.auth,
     })),
+    specCoverage: safe.specCoverage
+      ? {
+          source: safe.specCoverage.source,
+          title: redactText(safe.specCoverage.title),
+          version: safe.specCoverage.version,
+          declaredCount: safe.specCoverage.declaredCount,
+          coveredCount: safe.specCoverage.coveredCount,
+          untested: safe.specCoverage.untested.map((o) => ({
+            method: o.method,
+            path: redactText(o.path),
+            secured: o.secured,
+            write: o.write,
+            deprecated: o.deprecated,
+            summary: redactText(o.summary),
+          })),
+          shadow: safe.specCoverage.shadow.map((s) => ({
+            method: s.method,
+            template: redactText(s.template),
+            statuses: s.statuses,
+          })),
+          error: safe.specCoverage.error ? redactText(safe.specCoverage.error) : undefined,
+        }
+      : undefined,
+    truncation: safe.truncation
+      ? {
+          totalA: safe.truncation.totalA,
+          totalB: safe.truncation.totalB,
+          droppedA: safe.truncation.droppedA,
+          droppedB: safe.truncation.droppedB,
+          perActorLimit: safe.truncation.perActorLimit,
+        }
+      : undefined,
     redaction: {
       dropped: DROPPED,
       preview: [
