@@ -1,3 +1,8 @@
+## 2026-09-16 — Spec coverage desk view (follow-up after PR #8 merge)
+
+- PR #8 merged to main (squash 8a3146d). Restarted branch from main per the merged-PR rule.
+- User picked "upgrade further". Completed the half-surfaced P2.4: added More → Spec coverage tab (spec-view.tsx) rendering the untested (blind-spot) + shadow endpoint tables with auth/write flags, statuses, coverage bar, and copy-list buttons. ADR-045.
+- No engine change; typecheck/lint/build/claimforge-216 clean. New branch pushed → new PR.
 ## 2026-09-16 — P2 detections wired into Playbook + Replay pack (follow-up)
 
 - After PR #8, user asked to "add a feature / upgrade the weak part". The weak part: BFLA/CSRF/refresh findings had no Playbook path or replay recipe — dead-ends for the analyst.

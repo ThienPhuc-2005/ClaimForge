@@ -265,3 +265,10 @@ Locked for the P2 epic (detection expansion):
 - **Replay recipes** (`buildReplays`): BFLA = the low-privilege actor's exact request under the credential boundary (only that actor's creds attached); CSRF = a cross-site PoC (`csrfPoc`: auto-submitting HTML form for urlencoded/GET, `fetch(..., {credentials:"include"})` for JSON); refresh = the rotated-token refresh call.
 - No new network behavior: PoCs are text artifacts (copy-only), redacted like every other replay on export (curl/raw → `[redacted]` in the Team projection). `buildReplays` now also takes `findings`.
 - Tests: `p2-playbook.test.ts` (direct + end-to-end via `analyze()`).
+
+## ADR-045 — Spec coverage gets a first-class desk view
+
+- P2.4 surfaced OpenAPI/Swagger coverage only as an aggregate finding + a one-line SpecCard summary; the rich `Workspace.specCoverage` (untested list with secured/write/deprecated flags, shadow list with statuses) was not workable.
+- Added **More → Spec coverage** (`src/components/spec-view.tsx`, DeskTab `spec`): a coverage bar (covered/declared %), an untested-endpoints table (Endpoint · Flags [auth/write/deprecated] · statuses seen) sorted secured/write-first, and a shadow-endpoints table (Route · statuses), each with a copy-list button for feeding a lab fuzzer.
+- Read-only view over existing engine output — no new engine behavior, no network. Renders sensible empty/error/no-spec states; visible even with no captures so the declared surface can be inspected from a spec alone.
+- Validated by typecheck + lint + production build (repo's bar for view components; the coverage data itself is unit-tested in `p2-spec.test.ts`).
