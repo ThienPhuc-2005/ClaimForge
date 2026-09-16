@@ -62,6 +62,7 @@ function analyzeYield(
   aLabel: string,
   bLabel: string,
   policy: AnalysisPolicy,
+  specRaw: string,
 ): Promise<Workspace> {
   const g = ++yieldGen;
   return new Promise((resolve, reject) => {
@@ -71,7 +72,7 @@ function analyzeYield(
         return;
       }
       try {
-        resolve(analyze(aRaw, bRaw, aLabel, bLabel, policy));
+        resolve(analyze(aRaw, bRaw, aLabel, bLabel, policy, specRaw));
       } catch (e) {
         reject(e instanceof Error ? e : new Error(String(e)));
       }
@@ -85,16 +86,17 @@ export function analyzeAsync(
   aLabel: string,
   bLabel: string,
   policy: AnalysisPolicy = DEFAULT_POLICY,
+  specRaw = "",
 ): Promise<Workspace> {
   cancelAnalyzeJobs("analyze superseded");
-  const size = aRaw.length + bRaw.length;
+  const size = aRaw.length + bRaw.length + specRaw.length;
   const w = size >= WORKER_ANALYZE_BYTES ? getWorker() : null;
-  if (!w) return analyzeYield(aRaw, bRaw, aLabel, bLabel, policy);
+  if (!w) return analyzeYield(aRaw, bRaw, aLabel, bLabel, policy, specRaw);
   const id = (seq += 1);
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
     try {
-      w.postMessage({ id, aRaw, bRaw, aLabel, bLabel, policy });
+      w.postMessage({ id, aRaw, bRaw, aLabel, bLabel, policy, specRaw });
     } catch (e) {
       pending.delete(id);
       reject(e instanceof Error ? e : new Error("analyze worker postMessage failed"));

