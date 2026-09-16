@@ -1,3 +1,7 @@
+## 2026-09-16 — Open-redirect detection family (follow-up on PR #9 branch)
+
+- User picked "upgrade further / new bug family". Added open-redirect (CWE-601) as `redirect.ts`: off-origin or dangerous-scheme redirect target reflected from a client-controlled param. Always Suspicion (OAuth redirect_uri is a legit lookalike); same-origin and non-redirect params ignored.
+- Wired into findings + Playbook (path-open-redirect + replay-redirect) + cwe (CWE-601). RULE_VERSION → bola-trust-3. ADR-046. Gates + p2-redirect.test.ts (8 tests). claimforge 224, team 25; typecheck/lint/build clean. Pushed to the PR #9 branch.
 ## 2026-09-16 — Spec coverage desk view (follow-up after PR #8 merge)
 
 - PR #8 merged to main (squash 8a3146d). Restarted branch from main per the merged-PR rule.

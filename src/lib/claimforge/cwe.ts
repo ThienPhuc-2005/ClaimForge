@@ -3,6 +3,7 @@ export function mapCweOwasp(title: string, fingerprint?: string): { cwe: string[
   if (/bfla/.test(t)) return { cwe: ["CWE-285"], owasp: ["A01:2021 Broken Access Control"] };
   if (/csrf/.test(t)) return { cwe: ["CWE-352"], owasp: ["A01:2021 Broken Access Control"] };
   if (/refresh token|refresh:/.test(t)) return { cwe: ["CWE-613"], owasp: ["A07:2021 Identification and Authentication Failures"] };
+  if (/open redirect|redirect:/.test(t)) return { cwe: ["CWE-601"], owasp: ["A01:2021 Broken Access Control"] };
   if (/undocumented|shadow|spec:/.test(t)) return { cwe: ["CWE-1059"], owasp: ["A01:2021 Broken Access Control"] };
   if (/truncat/.test(t)) return { cwe: [], owasp: [] };
   if (/bola|idor/.test(t)) return { cwe: ["CWE-639"], owasp: ["A01:2021 Broken Access Control"] };

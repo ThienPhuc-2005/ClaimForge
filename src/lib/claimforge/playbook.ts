@@ -215,6 +215,32 @@ function refreshReplays(findings: Finding[], requests: CapturedRequest[]): Repla
   return out;
 }
 
+/** Open redirect: replay the request carrying the client-controlled redirect target. */
+function openRedirectReplays(findings: Finding[], requests: CapturedRequest[]): ReplayItem[] {
+  const out: ReplayItem[] = [];
+  const seen = new Set<string>();
+  for (const f of findings) {
+    if (!(f.fingerprint ?? "").startsWith("open-redirect:")) continue;
+    const [, method, template, param] = parseFp(f.fingerprint);
+    const sample = requests.find((r) => r.method === method && r.template === template);
+    if (!sample) continue;
+    const key = `${method}:${template}:${param}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(
+      plainReplay(
+        `replay-redirect-${out.length}`,
+        `Open redirect · ${method} ${template} (${param})`,
+        f.severity === "critical" ? "high" : f.severity,
+        `Swap the '${param}' value for an attacker origin (e.g. https://evil.test) in a lab and confirm the browser is sent there. Lab only — ClaimForge does not fire it.`,
+        curlReplay(sample),
+        rawHttpFromSample(sample),
+      ),
+    );
+  }
+  return out;
+}
+
 export function buildReplays(
   ws: Pick<Workspace, "requests" | "jwts" | "graph" | "aLabel" | "bLabel" | "findings">,
 ): ReplayItem[] {
@@ -270,6 +296,7 @@ export function buildReplays(
   out.push(...bflaReplays(ws.findings, ws.requests));
   out.push(...csrfReplays(ws.findings, ws.requests));
   out.push(...refreshReplays(ws.findings, ws.requests));
+  out.push(...openRedirectReplays(ws.findings, ws.requests));
 
   return dedupeReplays(out);
 }
@@ -439,6 +466,24 @@ export function buildPaths(ws: {
         "Copy the Refresh replay from the Replay pack.",
         "Replay T well past any grace window (seconds to minutes later, or after a second rotation).",
         "If T still returns 2xx, rotation is broken. On true reuse, the server should revoke the whole token family.",
+      ],
+    });
+  }
+
+  const redirF = ws.findings.filter((f) => (f.fingerprint ?? "").startsWith("open-redirect:"));
+  if (redirF.length) {
+    paths.push({
+      id: "path-open-redirect",
+      title: "Open redirect · client-controlled redirect target",
+      objective:
+        "A redirect target taken from a request parameter, pointing off-origin, is a phishing / OAuth token-theft vector — unless the server validates it against an allowlist.",
+      findingIds: redirF.map((f) => f.id),
+      steps: [
+        "Copy the Open-redirect replay from the Replay pack.",
+        "Set the redirect parameter to an attacker origin (https://evil.test) in your interceptor.",
+        "If the response redirects the browser to that origin, it is an open redirect.",
+        "For OAuth, aim the redirect_uri at an origin you control and watch for the code/token landing there.",
+        "Fix: allowlist redirect targets (relative paths or a fixed host set); match OAuth redirect_uri to registered values.",
       ],
     });
   }

@@ -272,3 +272,10 @@ Locked for the P2 epic (detection expansion):
 - Added **More → Spec coverage** (`src/components/spec-view.tsx`, DeskTab `spec`): a coverage bar (covered/declared %), an untested-endpoints table (Endpoint · Flags [auth/write/deprecated] · statuses seen) sorted secured/write-first, and a shadow-endpoints table (Route · statuses), each with a copy-list button for feeding a lab fuzzer.
 - Read-only view over existing engine output — no new engine behavior, no network. Renders sensible empty/error/no-spec states; visible even with no captures so the declared surface can be inspected from a spec alone.
 - Validated by typecheck + lint + production build (repo's bar for view components; the coverage data itself is unit-tested in `p2-spec.test.ts`).
+
+## ADR-046 — Open-redirect detection is Suspicion-only
+
+- New family `redirect.ts` (CWE-601 / A01): a client-controlled redirect target (query/body param matching a redirect-name allowlist) that is off-origin or a dangerous scheme (`javascript:`/`data:`/protocol-relative).
+- **Always Suspicion** from a passive capture: a server-validated OAuth `redirect_uri` to a registered client looks identical on the wire, so a reflected off-origin redirect is a candidate to verify (supply an attacker origin in a lab), never proven. Reflected (3xx honoring the target) → Suspicion; off-origin target with no honoring redirect observed → Observation. Dangerous scheme bumps severity.
+- FP guards: only off-origin / dangerous targets (same-origin `?next=/dashboard` login redirects ignored); only redirect-named params (a `?q=https://…` search term is not flagged); relative paths never misparsed as hosts.
+- Wired into findings + Playbook (`path-open-redirect` + `replay-redirect` recipe) + `cwe.ts` (CWE-601). `RULE_VERSION` → `bola-trust-3`. Gates + `p2-redirect.test.ts`.
