@@ -3,7 +3,7 @@
  * coverage, capture truncation) has a regression test that would fail if the
  * fix is reverted. Mirrors the P0.8 gate discipline (see p0-gates.ts).
  */
-export const P2_ITEMS = ["A1-BFLA", "A2-CSRF", "A3-REFRESH", "B-SPEC", "D-SCALE"] as const;
+export const P2_ITEMS = ["A1-BFLA", "A2-CSRF", "A3-REFRESH", "B-SPEC", "D-SCALE", "E-REDIRECT"] as const;
 export type P2Item = (typeof P2_ITEMS)[number];
 
 export interface P2Gate {
@@ -71,6 +71,22 @@ export const P2_GATES: P2Gate[] = [
     before: "Coverage vs a declared spec was impossible",
     after: "Untested declared ops and shadow endpoints are reported; JSON-only, never sends a request",
     evidenceTest: "p2-spec.test.ts:coverage: declared vs observed, untested ranked by security/write",
+  },
+  {
+    id: "E-open-redirect",
+    p2: "E-REDIRECT",
+    bug: "Client-controlled redirect target sent off-origin",
+    before: "Open redirect / OAuth redirect_uri abuse not scored",
+    after: "Off-origin or dangerous-scheme reflected redirect target is a Suspicion; same-origin redirects ignored",
+    evidenceTest: "p2-redirect.test.ts:reflected off-origin redirect is a Suspicion",
+  },
+  {
+    id: "E-open-redirect-no-fp",
+    p2: "E-REDIRECT",
+    bug: "Normal login redirect or non-redirect URL param mis-flagged",
+    before: "Any URL-shaped param flagged",
+    after: "Same-origin next=/dashboard and non-redirect params (q=) never fire",
+    evidenceTest: "p2-redirect.test.ts:same-origin redirect target is ignored (normal login flow)",
   },
   {
     id: "D-truncation-visible",

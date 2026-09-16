@@ -32,6 +32,7 @@
 | P2.4 | OpenAPI/Swagger coverage | done | `spec.ts` + `p2-spec.test.ts`. JSON-only offline surface diff. Regex path matching (non-numeric params). Host-scoped (drops third-party). Covered = <400 seen. Untested + shadow findings. `specRaw` threaded through worker/store/UI. ADR-042. |
 | P2.5 | Scale + truncation visibility | done | `limits.ts` 24MB / 4000 per actor. `Workspace.truncation` + `CAPTURE_TRUNCATED` finding + header banner. No silent drops. `p2-scale-truncation.test.ts`. ADR-043. |
 | P2.* | Adversarial review of P2 | done | Attack→verify workflow per family; real FPs/FNs fixed with regression tests before commit. `p2-gates.ts` + `p2-adversarial-gate.test.ts`. |
+| P2.6 | Open redirect (CWE-601) | done | `redirect.ts` + `p2-redirect.test.ts`. Off-origin/dangerous-scheme reflected redirect target. Always Suspicion (OAuth redirect_uri lookalike). Playbook path + replay. ADR-046. |
 | P2.next | Plain destructive-on-object BFLA (`DELETE /users/{id}`) | not_started | Deliberately deferred: needs ownership context to avoid flagging self-account deletion. Documented in KNOWN_ISSUES. |
 | P1.*-capture | Encrypted capture share | not_started | Requires new threat model. Not P1. |
 | P2–P6 | perf, CI matrix, golden 60 | partial/not_started | CI now typecheck+lint+`npm test`+audit+build. Sandbox-doc tests skip on GitHub checkout. Solo limits 1200 already. CI is not merge-enforced until a ruleset exists (ADR-029). |

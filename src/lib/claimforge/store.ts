@@ -28,6 +28,7 @@ export type DeskTab =
   | "traffic"
   | "lab"
   | "policy"
+  | "spec"
   | "team";
 
 interface ForgeState {

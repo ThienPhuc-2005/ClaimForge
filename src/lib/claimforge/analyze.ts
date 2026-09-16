@@ -24,6 +24,7 @@ import { classifyTimeline, tokensAliveAfterLogout } from "./session.ts";
 import { brokenFunctionLevelAuthz } from "./bfla.ts";
 import { csrfExposures } from "./csrf.ts";
 import { refreshTokenReuse } from "./refresh.ts";
+import { openRedirects } from "./redirect.ts";
 import { buildSpecCoverage } from "./spec.ts";
 import { jwtIssueKind, mergeFindings } from "./dedup.ts";
 import {
@@ -502,6 +503,26 @@ function findings(ws: Omit<Workspace, "findings">): Finding[] {
       template: hit.template,
       how: "A short reuse/leeway window is legitimate (RFC 9700). Confirm in a lab that the old token still works well past any grace window; on true reuse, revoke the whole token family (breach detection).",
       fingerprint: `refresh:${hit.actor}:${hit.rotationObserved ? "reuse" : "replay"}:${hit.tokenHint}`,
+      reasonCodes: hit.reasonCodes,
+    });
+  }
+
+  for (const hit of openRedirects(ws.requests)) {
+    add({
+      severity: hit.severity,
+      confidence: hit.confidence,
+      title: `Open redirect · ${hit.method} ${hit.template} (${hit.param})`,
+      why: hit.reflected
+        ? `The server redirected (${hit.status}) to an ${hit.dangerous ? "unsafe-scheme" : "off-origin"} target taken from the client-controlled '${hit.param}' parameter${hit.location ? `: ${hit.location}` : ""}.`
+        : `The '${hit.param}' parameter carries an ${hit.dangerous ? "unsafe-scheme" : "off-origin"} redirect target (${hit.target}); no honoring redirect was seen in this capture.`,
+      evidence: [
+        `${hit.method} ${hit.path} → ${hit.status}`,
+        `${hit.param}=${hit.target}`,
+        hit.location ? `Location: ${hit.location}` : "no Location observed",
+      ],
+      template: hit.template,
+      how: "Allowlist redirect targets server-side (relative paths or a fixed host set). In a lab, set the parameter to an attacker origin and confirm the browser is sent there. OAuth redirect_uri must be matched against registered values.",
+      fingerprint: `open-redirect:${hit.method}:${hit.template}:${hit.param}`,
       reasonCodes: hit.reasonCodes,
     });
   }
